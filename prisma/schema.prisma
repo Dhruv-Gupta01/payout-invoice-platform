@@ -1,0 +1,211 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AdminUser {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+
+  documentsReviewed Document[]      @relation("DocumentReviewer")
+  bankUnlocks       BankUnlockLog[] @relation("UnlockedBy")
+}
+
+model Resource {
+  id                String   @id @default(uuid())
+  email             String   @unique
+  name              String
+  address           String?
+  contactNo         String?
+  pan               String?
+  beneficiaryName   String?
+  accountNo         String?
+  bankName          String?
+  ifsc              String?
+  passwordHash      String?  // null until account activated via the invite flow (LLD §0.25)
+  inviteToken       String?  @unique // set by POST /admin/resources/:id/send-invite; cleared once accepted
+  inviteTokenExpiresAt DateTime? // LLD §0.25 — 7 days from send
+  onboardingCompleted Boolean @default(false)
+  bankLocked        Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  sheetRows      SheetRow[]
+  invoices       Invoice[]
+  documents      Document[]
+  bankUnlockLogs BankUnlockLog[]
+
+  @@index([email])
+}
+
+model SheetRow {
+  id              String    @id @default(uuid())
+  resourceEmail   String
+  resourceName    String    // mirrors resourceEmail — used to set/refresh Resource.name on sync (see LLD §0.4)
+  resource        Resource? @relation(fields: [resourceEmail], references: [email])
+  month           String
+  projectName     String
+  batch           String
+  role            String
+  hours           Decimal
+  rate            Decimal
+  computedAmount  Decimal
+  sheetAmount     Decimal?  // raw value from the sheet, if present — used as an override if filled
+  rawData         Json      // full row as synced, for anything not yet modeled
+  removedFromSheet Boolean  @default(false) // true if a later sync no longer contains this row
+  lastSyncedAt    DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+
+  invoice Invoice?
+
+  @@unique([resourceEmail, projectName, batch, month], name: "sheet_row_natural_key")
+  @@index([resourceEmail])
+}
+
+enum GenerationStatus {
+  FLAGGED     // held pending admin acknowledgment (duplicate/amount flag)
+  QUEUED      // job enqueued, not yet started
+  PROCESSING  // worker actively generating
+  GENERATED   // doc created successfully
+  FAILED      // retries exhausted
+}
+
+enum ApprovalStatus {
+  NOT_APPLICABLE // generation not yet complete
+  PENDING
+  APPROVED
+  DECLINED
+}
+
+// Gate 1 (LLD §0.9) — confirming the computed payout amount, before the
+// resource ever sees the invoice document. Independent of both
+// GenerationStatus (generation is not gated on this) and ApprovalStatus
+// (gate 2 — reviewing the document itself, only actionable once this is
+// CONFIRMED).
+enum AmountConfirmationStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+model Invoice {
+  id                 String           @id @default(uuid())
+  invoiceNo          String           @unique   // business-facing, e.g. "INV-0001"
+  batchId            String?          // groups invoices created by one /admin/invoices/generate call (see LLD §0.6)
+  sheetRowId         String           @unique
+  sheetRow           SheetRow         @relation(fields: [sheetRowId], references: [id])
+  resourceId         String
+  resource           Resource         @relation(fields: [resourceId], references: [id])
+
+  amount             Decimal
+  amountInWords      String?          // filled once generated
+  invoiceDate        DateTime?
+
+  driveFileId        String?          // set immediately after template copy — enables safe retry
+  driveDocUrl         String?
+
+  generationStatus   GenerationStatus @default(QUEUED)
+
+  amountConfirmationStatus AmountConfirmationStatus @default(PENDING) // gate 1 — see LLD §0.9
+  amountConfirmedAt        DateTime?                                 // gate 1 timestamp (confirm or reject)
+  amountRejectionReason    String?
+
+  approvalStatus     ApprovalStatus   @default(NOT_APPLICABLE)       // gate 2 — only actionable once amountConfirmationStatus = CONFIRMED
+  declineReason      String?
+  actionedAt         DateTime?        // when resource approved/declined (gate 2 only)
+
+  flagReason         String?          // set if held by duplicate/amount detection
+  flagAcknowledgedBy String?          // AdminUser id
+  flagAcknowledgedAt DateTime?
+
+  paidAt             DateTime?        // set by reconciliation (LLD §0.26) once matched against a bank file row
+
+  errorMessage       String?          // set if generationStatus = FAILED
+
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([resourceId])
+  @@index([generationStatus])
+  @@index([batchId])
+}
+
+enum DocumentType {
+  AADHAAR
+  PAN
+  PHOTO
+  BANK_PROOF
+  NDA
+}
+
+enum DocumentStatus {
+  PENDING_REVIEW
+  VERIFIED
+  REJECTED
+}
+
+model Document {
+  id              String         @id @default(uuid())
+  resourceId      String
+  resource        Resource       @relation(fields: [resourceId], references: [id])
+  docType         DocumentType
+  fileUrl         String         // Google Drive file link
+  status          DocumentStatus @default(PENDING_REVIEW)
+  rejectionReason String?
+  reviewedById    String?
+  reviewedBy      AdminUser?     @relation("DocumentReviewer", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+  uploadedAt      DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([resourceId, docType]) // one active document per type; re-upload overwrites this row
+}
+
+model BankUnlockLog {
+  id           String    @id @default(uuid())
+  resourceId   String
+  resource     Resource  @relation(fields: [resourceId], references: [id])
+  unlockedById String
+  unlockedBy   AdminUser @relation("UnlockedBy", fields: [unlockedById], references: [id])
+  unlockedAt   DateTime  @default(now())
+  editedAt     DateTime? // set when the resource actually saves
+  reLockedAt   DateTime?
+
+  @@index([resourceId])
+}
+
+enum NotificationEvent {
+  PAYOUT_GENERATED    // renamed from INVOICE_GENERATED (LLD §0.9) — same trigger point, no document link
+  DOCUMENT_VERIFIED
+  DOCUMENT_REJECTED
+  BANK_UNLOCKED
+  INVOICE_DECLINED
+  DOCUMENT_REUPLOADED
+  AMOUNT_REJECTED     // new (LLD §0.9) — resource rejects gate 1, notifies admin
+  INVITE_SENT         // new (LLD §0.25) — admin sends/resends a resource's invite link
+  INVOICE_NOT_PAID    // new (LLD §0.26) — reconciliation ran, this eligible invoice wasn't found in the bank file
+  INVOICE_REOPENED    // new (LLD §0.29) — admin reopens a DECLINED invoice back to pending, resource notified
+}
+
+enum NotificationStatus {
+  SENT
+  FAILED
+}
+
+model NotificationLog {
+  id             String              @id @default(uuid())
+  eventType      NotificationEvent
+  recipientEmail String
+  relatedType    String              // "invoice" | "document" | "resource"
+  relatedId      String
+  sentAt         DateTime            @default(now())
+  status         NotificationStatus  @default(SENT)
+  errorMessage   String?
+}
