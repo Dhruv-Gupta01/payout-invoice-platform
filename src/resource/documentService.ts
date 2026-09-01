@@ -4,14 +4,15 @@ import { DriveProvider } from "../providers/DriveProvider";
 import { EmailProvider } from "../providers/EmailProvider";
 import { notify } from "../notifications/notifier";
 
-// LLD §2.7: type = aadhaar|pan|photo|bank_proof|nda in the URL, mapped to
-// the DocumentType enum.
+// LLD §2.7: type = aadhaar|pan|photo|bank_proof|nda|ica in the URL, mapped
+// to the DocumentType enum.
 const DOC_TYPE_PARAM_MAP: Record<string, DocumentType> = {
   aadhaar: "AADHAAR",
   pan: "PAN",
   photo: "PHOTO",
   bank_proof: "BANK_PROOF",
   nda: "NDA",
+  ica: "ICA",
 };
 
 export function parseDocTypeParam(param: string): DocumentType | null {

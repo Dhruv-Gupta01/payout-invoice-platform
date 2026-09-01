@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 
 import { ResourceSidebar } from "@/components/ops/ResourceSidebar";
 import { Button } from "@/components/ui/button";
@@ -192,9 +192,31 @@ function ProfilePage() {
             <div className="my-6 h-px bg-border" />
 
             <section>
-              <h2 className="mb-5 text-[20px] leading-none font-medium tracking-tight text-foreground">
+              <h2 className="mb-3 text-[20px] leading-none font-medium tracking-tight text-foreground">
                 Bank details for payment
               </h2>
+
+              {editing && (
+                <div className="mb-5 flex gap-2.5 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-[12px] leading-relaxed text-destructive">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                  <div className="space-y-1.5">
+                    <p className="font-semibold">Double-check these before saving.</p>
+                    <ul className="list-disc space-y-1 pl-4">
+                      <li>
+                        The <strong>beneficiary name</strong> and <strong>bank name</strong> must exactly
+                        match your bank&apos;s records, or the transfer is rejected and{" "}
+                        <strong>no payment will be made</strong>.
+                      </li>
+                      <li>
+                        A payment credited to a wrong account number / IFSC{" "}
+                        <strong>cannot be reversed or reconsidered</strong>.
+                      </li>
+                      <li>You get one edit per unlock — it re-locks as soon as you save.</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+
               <div className="grid gap-5 sm:grid-cols-2">
                 {editing && form ? (
                   <>

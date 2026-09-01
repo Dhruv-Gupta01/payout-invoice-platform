@@ -39,7 +39,7 @@ async function loginAsAdmin(agent: ReturnType<typeof request.agent>) {
 // readiness reason instead of the one under test.
 async function seedReadyResource(data: { email: string; name: string }) {
   const resource = await prisma.resource.create({ data: { ...data, onboardingCompleted: true } });
-  for (const docType of ["AADHAAR", "PAN", "PHOTO", "BANK_PROOF", "NDA"] as const) {
+  for (const docType of ["AADHAAR", "PAN", "PHOTO", "BANK_PROOF", "NDA", "ICA"] as const) {
     await prisma.document.create({
       data: { resourceId: resource.id, docType, fileUrl: "https://fake-drive.example.com/f.pdf", status: "VERIFIED" },
     });
@@ -303,7 +303,7 @@ describe("Generation readiness gate (onboarding + documents)", () => {
     const resource = await prisma.resource.create({
       data: { email: "readiness-docs@example.com", name: "Readiness Docs", onboardingCompleted: true },
     });
-    // Only 2 of 5 required types verified — PAN pending, others missing entirely.
+    // Only 1 of 6 required types verified — PAN pending, others missing entirely.
     await prisma.document.create({
       data: { resourceId: resource.id, docType: "AADHAAR", fileUrl: "https://fake-drive.example.com/f.pdf", status: "VERIFIED" },
     });
@@ -320,7 +320,7 @@ describe("Generation readiness gate (onboarding + documents)", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.flagged).toHaveLength(1);
-    expect(res.body.flagged[0].flagReason).toContain("4 document(s) not yet verified");
+    expect(res.body.flagged[0].flagReason).toContain("5 document(s) not yet verified");
     expect(res.body.flagged[0].flagReason).toContain("PAN card");
     expect(res.body.flagged[0].flagReason).toContain("Signed NDA");
   });
@@ -364,7 +364,7 @@ describe("Generation readiness gate (onboarding + documents)", () => {
 
     // Admin chases the resource up; they finish onboarding and all 5 docs get verified.
     await prisma.resource.update({ where: { id: resource.id }, data: { onboardingCompleted: true } });
-    for (const docType of ["AADHAAR", "PAN", "PHOTO", "BANK_PROOF", "NDA"] as const) {
+    for (const docType of ["AADHAAR", "PAN", "PHOTO", "BANK_PROOF", "NDA", "ICA"] as const) {
       await prisma.document.create({
         data: { resourceId: resource.id, docType, fileUrl: "https://fake-drive.example.com/f.pdf", status: "VERIFIED" },
       });

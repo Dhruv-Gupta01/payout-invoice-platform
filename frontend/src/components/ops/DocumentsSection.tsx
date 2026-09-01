@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 
 // LLD §2.7: Document.docType enum.
-export type DocType = "AADHAAR" | "PAN" | "PHOTO" | "BANK_PROOF" | "NDA";
+export type DocType = "AADHAAR" | "PAN" | "PHOTO" | "BANK_PROOF" | "NDA" | "ICA";
 export type DocStatus = "PENDING_REVIEW" | "VERIFIED" | "REJECTED";
 
 export type DocumentItem = {
@@ -28,6 +28,7 @@ const DOC_CATALOG: { type: DocType; label: string }[] = [
   { type: "PHOTO", label: "Passport-size photo" },
   { type: "BANK_PROOF", label: "Bank passbook / cancelled cheque" },
   { type: "NDA", label: "Signed NDA" },
+  { type: "ICA", label: "Signed ICA" },
 ];
 
 const badgeStyles: Record<DocStatus, string> = {

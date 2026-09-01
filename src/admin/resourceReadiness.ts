@@ -13,13 +13,14 @@ const REQUIRED_DOC_TYPES: { type: DocumentType; label: string }[] = [
   { type: "PHOTO", label: "Passport-size photo" },
   { type: "BANK_PROOF", label: "Bank passbook / cancelled cheque" },
   { type: "NDA", label: "Signed NDA" },
+  { type: "ICA", label: "Signed ICA" },
 ];
 
 export function checkOnboardingIncomplete(resource: { onboardingCompleted: boolean }): string | null {
   return resource.onboardingCompleted ? null : "Resource has not completed onboarding";
 }
 
-// "Documents verified" means all 5 required types have a Document row with
+// "Documents verified" means all 6 required types have a Document row with
 // status VERIFIED — missing, pending-review, and rejected all count as "not
 // ready" (LLD §0.23).
 export async function checkDocumentsNotVerified(resourceId: string): Promise<string | null> {

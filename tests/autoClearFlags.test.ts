@@ -23,7 +23,7 @@ const ADMIN_PASSWORD = "autoclear-admin-password";
 const RESOURCE_EMAIL = "autoclear-resource@example.com";
 const RESOURCE_PASSWORD = "autoclear-resource-password";
 
-const REQUIRED_DOC_TYPES = ["AADHAAR", "PAN", "PHOTO", "BANK_PROOF", "NDA"] as const;
+const REQUIRED_DOC_TYPES = ["AADHAAR", "PAN", "PHOTO", "BANK_PROOF", "NDA", "ICA"] as const;
 
 const ONBOARDING_BODY = {
   address: "1 MG Road",

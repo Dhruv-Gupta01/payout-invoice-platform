@@ -7,6 +7,11 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
+  // Production build target. The lovable config defaults nitro to Cloudflare;
+  // we deploy the frontend to Vercel (serverless SSR), so override the preset.
+  // The `/api/*` same-origin proxy in production is a Vercel rewrite — see
+  // vercel.json — mirroring the dev-only vite proxy below.
+  nitro: { preset: "vercel" },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
@@ -22,7 +27,7 @@ export default defineConfig({
       // already occupies 3000.
       proxy: {
         "/api": {
-          target: "http://localhost:3001",
+          target: "http://localhost:3011",
           changeOrigin: true,
         },
       },

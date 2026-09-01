@@ -28,8 +28,8 @@ export const Route = createFileRoute("/documents")({
 });
 
 // LLD §2.7: Document.docType enum. The URL param the upload endpoint takes
-// (aadhaar|pan|photo|bank_proof|nda) is the lowercase form of these.
-type DocType = "AADHAAR" | "PAN" | "PHOTO" | "BANK_PROOF" | "NDA";
+// (aadhaar|pan|photo|bank_proof|nda|ica) is the lowercase form of these.
+type DocType = "AADHAAR" | "PAN" | "PHOTO" | "BANK_PROOF" | "NDA" | "ICA";
 type DocStatus = "PENDING_REVIEW" | "VERIFIED" | "REJECTED";
 
 type DocumentItem = {
@@ -42,12 +42,15 @@ type DocumentItem = {
   uploadedAt: string;
 };
 
-const DOC_CATALOG: { type: DocType; param: string; label: string }[] = [
+// `templateUrl` (when set) points at a blank form in frontend/public/templates/
+// — the resource downloads it, signs it, and re-uploads the signed copy here.
+const DOC_CATALOG: { type: DocType; param: string; label: string; templateUrl?: string }[] = [
   { type: "AADHAAR", param: "aadhaar", label: "Aadhaar card" },
   { type: "PAN", param: "pan", label: "PAN card" },
   { type: "PHOTO", param: "photo", label: "Passport-size photo" },
   { type: "BANK_PROOF", param: "bank_proof", label: "Bank passbook / cancelled cheque" },
-  { type: "NDA", param: "nda", label: "Signed NDA" },
+  { type: "NDA", param: "nda", label: "Signed NDA", templateUrl: "/templates/nda-unsigned.pdf" },
+  { type: "ICA", param: "ica", label: "Signed ICA", templateUrl: "/templates/ica-unsigned.pdf" },
 ];
 
 const badgeStyles: Record<DocStatus, string> = {
@@ -134,13 +137,22 @@ function DocumentsPage() {
                   <div key={cat.type} className="border-b border-border px-4 py-3 last:border-0">
                     <div className="flex min-h-[42px] flex-col gap-3 tab:flex-row tab:flex-wrap tab:items-center tab:gap-4">
                       <div className="text-[13px] text-foreground tab:min-w-[220px]">{cat.label}</div>
-                      <div className="text-[13px] text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-3 text-[13px] text-muted-foreground">
                         {doc ? (
                           <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">
                             View uploaded file
                           </a>
                         ) : (
                           "Not uploaded"
+                        )}
+                        {cat.templateUrl && (
+                          <a
+                            href={cat.templateUrl}
+                            download
+                            className="text-primary hover:underline"
+                          >
+                            Download blank form
+                          </a>
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-3 tab:ml-auto">

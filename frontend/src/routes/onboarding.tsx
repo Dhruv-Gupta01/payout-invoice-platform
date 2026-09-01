@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Loader2, Upload } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,15 +36,18 @@ type FieldKey =
   | "ifsc";
 
 // LLD §2.7: Document.docType enum / URL param.
-type DocType = "AADHAAR" | "PAN" | "PHOTO" | "BANK_PROOF" | "NDA";
+type DocType = "AADHAAR" | "PAN" | "PHOTO" | "BANK_PROOF" | "NDA" | "ICA";
 type DocumentItem = { docType: DocType; status: "PENDING_REVIEW" | "VERIFIED" | "REJECTED" };
 
-const docs: { key: DocType; param: string; label: string }[] = [
+// `templateUrl` (when set) points at a blank form in frontend/public/templates/
+// — download it, sign it, then upload the signed copy here.
+const docs: { key: DocType; param: string; label: string; templateUrl?: string }[] = [
   { key: "AADHAAR", param: "aadhaar", label: "Aadhaar card" },
   { key: "PAN", param: "pan", label: "PAN card" },
   { key: "PHOTO", param: "photo", label: "Passport-size photo" },
   { key: "BANK_PROOF", param: "bank_proof", label: "Bank passbook / cancelled cheque" },
-  { key: "NDA", param: "nda", label: "Signed NDA" },
+  { key: "NDA", param: "nda", label: "Signed NDA", templateUrl: "/templates/nda-unsigned.pdf" },
+  { key: "ICA", param: "ica", label: "Signed ICA", templateUrl: "/templates/ica-unsigned.pdf" },
 ];
 
 function OnboardingPage() {
@@ -173,9 +176,30 @@ function OnboardingPage() {
         </div>
 
         <div className="mt-6 rounded-md border border-border bg-card p-4 tab:p-6">
-          <h2 className="mb-5 text-[20px] leading-none font-medium tracking-tight text-foreground">
+          <h2 className="mb-3 text-[20px] leading-none font-medium tracking-tight text-foreground">
             Bank details for payment
           </h2>
+
+          <div className="mb-5 flex gap-2.5 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-[12px] leading-relaxed text-destructive">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <div className="space-y-1.5">
+              <p className="font-semibold">Check every field carefully before you submit.</p>
+              <ul className="list-disc space-y-1 pl-4">
+                <li>
+                  The <strong>beneficiary name</strong> and <strong>bank name</strong> must exactly match
+                  what your bank has on record. If they don&apos;t match, the bank will reject the
+                  transfer and <strong>no payment will be made</strong>.
+                </li>
+                <li>
+                  Account number and IFSC must be correct. Once a payment is credited it{" "}
+                  <strong>cannot be reversed or reconsidered</strong> — a wrong account means the money
+                  is gone.
+                </li>
+                <li>These details lock on submission; changing them later needs an admin unlock.</li>
+              </ul>
+            </div>
+          </div>
+
           <div className="grid gap-5 sm:grid-cols-2">
             <Field
               label="Beneficiary name"
@@ -218,6 +242,7 @@ function OnboardingPage() {
                 <UploadRow
                   key={d.key}
                   label={d.label}
+                  templateUrl={d.templateUrl}
                   uploaded={Boolean(uploaded)}
                   uploading={uploadingParam === d.param}
                   onPick={() => {
@@ -263,11 +288,13 @@ function Field({
 
 function UploadRow({
   label,
+  templateUrl,
   uploaded,
   uploading,
   onPick,
 }: {
   label: string;
+  templateUrl?: string | undefined;
   uploaded: boolean;
   uploading: boolean;
   onPick: () => void;
@@ -283,6 +310,15 @@ function UploadRow({
           </p>
         ) : (
           <p className="mt-0.5 text-[12px] text-muted-foreground">No file uploaded</p>
+        )}
+        {templateUrl && (
+          <a
+            href={templateUrl}
+            download
+            className="mt-0.5 inline-block text-[12px] text-primary hover:underline"
+          >
+            Download blank form
+          </a>
         )}
       </div>
       <Button

@@ -143,6 +143,7 @@ enum DocumentType {
   PHOTO
   BANK_PROOF
   NDA
+  ICA
 }
 
 enum DocumentStatus {
