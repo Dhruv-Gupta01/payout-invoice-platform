@@ -22,6 +22,7 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   PHOTO: "Photo",
   BANK_PROOF: "Bank Proof",
   NDA: "NDA",
+  ICA: "ICA",
 };
 
 // LLD §0.25 — the frontend's own public base URL. Backend-only env var
@@ -30,22 +31,37 @@ const DOC_TYPE_LABELS: Record<string, string> = {
 // production.
 const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL ?? "http://localhost:4000";
 
+// "Name <email>" for the resource an event is about — shown in the
+// admin-facing emails (AMOUNT_REJECTED, INVOICE_DECLINED, DOCUMENT_REUPLOADED,
+// INVOICE_NOT_PAID) so the admin knows *who* acted without opening the app.
+function actorLabelOf(resource: { name: string; email: string } | null | undefined): string | undefined {
+  return resource ? `${resource.name} <${resource.email}>` : undefined;
+}
+
 async function resolveRefAndReason(
   eventType: NotificationEvent,
   relatedId: string
-): Promise<{ ref: string; reason?: string | null; inviteUrl?: string }> {
+): Promise<{ ref: string; reason?: string | null; inviteUrl?: string; actorLabel?: string }> {
   if (INVOICE_EVENTS.includes(eventType)) {
-    const invoice = await prisma.invoice.findUnique({ where: { id: relatedId } });
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: relatedId },
+      include: { resource: true },
+    });
     return {
       ref: invoice?.invoiceNo ?? relatedId,
       reason: eventType === "AMOUNT_REJECTED" ? invoice?.amountRejectionReason : undefined,
+      actorLabel: actorLabelOf(invoice?.resource),
     };
   }
   if (DOCUMENT_EVENTS.includes(eventType)) {
-    const document = await prisma.document.findUnique({ where: { id: relatedId } });
+    const document = await prisma.document.findUnique({
+      where: { id: relatedId },
+      include: { resource: true },
+    });
     return {
       ref: document ? (DOC_TYPE_LABELS[document.docType] ?? document.docType) : relatedId,
       reason: eventType === "DOCUMENT_REJECTED" ? document?.rejectionReason : undefined,
+      actorLabel: actorLabelOf(document?.resource),
     };
   }
   if (eventType === "INVITE_SENT") {
@@ -77,8 +93,8 @@ export class RealEmailProvider implements EmailProvider {
   }
 
   async send(to: string, eventType: NotificationEvent, relatedId: string): Promise<void> {
-    const { ref, reason, inviteUrl } = await resolveRefAndReason(eventType, relatedId);
-    const { subject, html } = buildEmailContent(eventType, ref, reason, inviteUrl);
+    const { ref, reason, inviteUrl, actorLabel } = await resolveRefAndReason(eventType, relatedId);
+    const { subject, html } = buildEmailContent(eventType, ref, reason, inviteUrl, actorLabel);
 
     const result = await this.resend.emails.send({ from: this.fromEmail, to, subject, html });
     if (result.error) {

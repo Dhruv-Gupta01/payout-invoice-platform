@@ -41,6 +41,7 @@ type AdminInvoice = {
   approvalStatus: "NOT_APPLICABLE" | "PENDING" | "APPROVED" | "DECLINED";
   driveDocUrl: string | null;
   declineReason: string | null;
+  amountRejectionReason: string | null;
   actionedAt: string | null;
 };
 
@@ -86,6 +87,18 @@ function formatActionDate(iso: string | null) {
   const h = h24 % 12 === 0 ? 12 : h24 % 12;
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
   return `${d.getUTCDate()} ${monthNames[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${h}:${mm} ${ampm}`;
+}
+
+// One "Reason" cell for both rejection paths: a gate-2 decline (declineReason)
+// or a gate-1 amount rejection (amountRejectionReason).
+function invoiceReason(inv: AdminInvoice): string {
+  if (inv.approvalStatus === "DECLINED") return inv.declineReason ?? "";
+  if (inv.amountConfirmationStatus === "REJECTED") {
+    return inv.amountRejectionReason
+      ? `Amount rejected: ${inv.amountRejectionReason}`
+      : "Amount rejected";
+  }
+  return "";
 }
 
 // Same generic badge as the invoices list — this table shows both
@@ -168,6 +181,14 @@ function ResourceDetail() {
   // resource.
   const reopenInvoice = useMutation({
     mutationFn: (invoiceId: string) => api.post(`/admin/invoices/${invoiceId}/reopen`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "resources", id] }),
+  });
+
+  // LLD §0.9/§0.24: recovery flow for a gate-1 amount rejection — re-reads the
+  // amount from the (corrected + re-synced) SheetRow, resets the confirmation
+  // gate to PENDING, and re-queues document generation.
+  const reprocessInvoice = useMutation({
+    mutationFn: (invoiceId: string) => api.post(`/admin/invoices/${invoiceId}/reprocess`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "resources", id] }),
   });
 
@@ -329,7 +350,7 @@ function ResourceDetail() {
                           <th className={th + " text-right"}>Amount</th>
                           <th className={th}>Status</th>
                           <th className={th}>Action date</th>
-                          <th className={th}>Decline reason</th>
+                          <th className={th}>Reason</th>
                           <th className={th}></th>
                         </tr>
                       </thead>
@@ -347,7 +368,7 @@ function ResourceDetail() {
                             <td className={td + " num text-muted-foreground"}>
                               {formatActionDate(inv.actionedAt)}
                             </td>
-                            <td className={td + " text-muted-foreground"}>{inv.declineReason ?? ""}</td>
+                            <td className={td + " text-muted-foreground"}>{invoiceReason(inv)}</td>
                             <td className={td}>
                               {inv.approvalStatus === "DECLINED" && (
                                 <Button
@@ -361,6 +382,21 @@ function ResourceDetail() {
                                     <Loader2 className="size-3 animate-spin" />
                                   )}
                                   Reopen
+                                </Button>
+                              )}
+                              {inv.amountConfirmationStatus === "REJECTED" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={reprocessInvoice.isPending}
+                                  title="Correct the amount in the Google Sheet and re-sync first, then reprocess to regenerate the invoice."
+                                  className="h-8 gap-1.5 bg-card text-[12px]"
+                                  onClick={() => reprocessInvoice.mutate(inv.id)}
+                                >
+                                  {reprocessInvoice.isPending && reprocessInvoice.variables === inv.id && (
+                                    <Loader2 className="size-3 animate-spin" />
+                                  )}
+                                  Reprocess
                                 </Button>
                               )}
                             </td>
@@ -391,8 +427,8 @@ function ResourceDetail() {
                           {formatActionDate(inv.actionedAt) || "—"}
                         </span>
                       </MobileField>
-                      <MobileField label="Decline reason">
-                        <span className="text-muted-foreground">{inv.declineReason ?? "—"}</span>
+                      <MobileField label="Reason">
+                        <span className="text-muted-foreground">{invoiceReason(inv) || "—"}</span>
                       </MobileField>
                       {inv.approvalStatus === "DECLINED" && (
                         <Button
@@ -407,6 +443,25 @@ function ResourceDetail() {
                           )}
                           Reopen
                         </Button>
+                      )}
+                      {inv.amountConfirmationStatus === "REJECTED" && (
+                        <>
+                          <p className="text-[11px] text-muted-foreground">
+                            Fix the amount in the Google Sheet and re-sync, then reprocess.
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={reprocessInvoice.isPending}
+                            className="h-11 w-full gap-1.5 bg-card text-[12px]"
+                            onClick={() => reprocessInvoice.mutate(inv.id)}
+                          >
+                            {reprocessInvoice.isPending && reprocessInvoice.variables === inv.id && (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            )}
+                            Reprocess
+                          </Button>
+                        </>
                       )}
                     </MobileCard>
                   ))}

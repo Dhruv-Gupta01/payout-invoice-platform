@@ -17,8 +17,12 @@ export function buildEmailContent(
   event: NotificationEvent,
   ref: string,
   reason?: string | null,
-  inviteUrl?: string
+  inviteUrl?: string,
+  // "Name <email>" of the resource an admin-facing event is about. Falls
+  // back to "The resource" when not supplied (e.g. in the pure-function tests).
+  actorLabel?: string
 ): { subject: string; html: string } {
+  const actor = actorLabel ?? "The resource";
   switch (event) {
     case "PAYOUT_GENERATED":
       return {
@@ -49,21 +53,21 @@ export function buildEmailContent(
     case "INVOICE_DECLINED":
       return {
         subject: `Invoice declined: ${ref}`,
-        html: `<p>The resource has declined invoice <strong>${ref}</strong>.</p><p>Please review it on the admin dashboard.</p>`,
+        html: `<p><strong>${actor}</strong> has declined invoice <strong>${ref}</strong>.</p><p>Please review it on the admin dashboard.</p>`,
       };
 
     case "DOCUMENT_REUPLOADED":
       return {
         subject: `Document re-uploaded for review: ${ref}`,
-        html: `<p>A resource has re-uploaded their <strong>${ref}</strong> document after a previous rejection.</p><p>Please review it on the admin dashboard.</p>`,
+        html: `<p><strong>${actor}</strong> has re-uploaded their <strong>${ref}</strong> document after a previous rejection.</p><p>Please review it on the admin dashboard.</p>`,
       };
 
     case "AMOUNT_REJECTED":
       return {
         subject: `Payout amount rejected: ${ref}`,
-        html: `<p>The resource has rejected the computed payout amount for <strong>${ref}</strong>${
+        html: `<p><strong>${actor}</strong> has rejected the computed payout amount for <strong>${ref}</strong>${
           reason ? `: <strong>${reason}</strong>` : "."
-        }</p><p>Please correct the underlying data and reprocess it on the admin dashboard.</p>`,
+        }</p><p>Please correct the underlying data (fix the Google Sheet and re-sync), then reprocess the invoice on the admin dashboard.</p>`,
       };
 
     case "INVITE_SENT":
@@ -75,7 +79,7 @@ export function buildEmailContent(
     case "INVOICE_NOT_PAID":
       return {
         subject: `Invoiced but not paid: ${ref}`,
-        html: `<p>Invoice <strong>${ref}</strong> is approved and generated but wasn't found in the most recent reconciliation file.</p><p>Please confirm whether payment has actually gone out.</p>`,
+        html: `<p>Invoice <strong>${ref}</strong> (${actor}) is approved and generated but wasn't found in the most recent reconciliation file.</p><p>Please confirm whether payment has actually gone out.</p>`,
       };
 
     case "INVOICE_REOPENED":

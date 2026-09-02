@@ -5,7 +5,7 @@ import { prisma } from "../lib/prisma";
 // Response 200: [{
 //   id, invoiceNo, projectName, batch, amount, invoiceDate,
 //   generationStatus, amountConfirmationStatus, approvalStatus,
-//   driveDocUrl, declineReason, actionedAt
+//   driveDocUrl, declineReason, amountRejectionReason, actionedAt
 // }]
 type InvoiceWithSheetRow = Prisma.InvoiceGetPayload<{ include: { sheetRow: true } }>;
 
@@ -26,6 +26,7 @@ function toListItem(invoice: InvoiceWithSheetRow, gateDriveDocUrl: boolean) {
     approvalStatus: invoice.approvalStatus,
     driveDocUrl: withheld ? null : invoice.driveDocUrl,
     declineReason: invoice.declineReason,
+    amountRejectionReason: invoice.amountRejectionReason,
     actionedAt: invoice.actionedAt,
   };
 }

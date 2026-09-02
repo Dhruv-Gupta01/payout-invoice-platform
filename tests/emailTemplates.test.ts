@@ -32,4 +32,15 @@ describe("buildEmailContent", () => {
     const amountRejected = buildEmailContent("AMOUNT_REJECTED" as never, "INV-0003", "Hours look wrong");
     expect(amountRejected.html).toContain("Hours look wrong");
   });
+
+  it("names the acting resource in admin-facing events when actorLabel is supplied, falling back otherwise", () => {
+    const label = "Ritika Garg <ritika@example.com>";
+    for (const event of ["AMOUNT_REJECTED", "INVOICE_DECLINED", "DOCUMENT_REUPLOADED", "INVOICE_NOT_PAID"]) {
+      const withActor = buildEmailContent(event as never, "INV-0009", null, undefined, label);
+      expect(withActor.html).toContain(label);
+
+      const withoutActor = buildEmailContent(event as never, "INV-0009");
+      expect(withoutActor.html).toContain("The resource");
+    }
+  });
 });
