@@ -22,25 +22,62 @@ describe("buildEmailContent", () => {
       const content = buildEmailContent(event as never, ref);
       expect(content.subject.length).toBeGreaterThan(0);
       expect(content.html).toContain(ref);
+      // Every event also ships a plain-text alternative (multipart —
+      // better deliverability than HTML-only), built from the same source
+      // paragraphs, so it should carry the same reference with no HTML tags.
+      expect(content.text).toContain(ref);
+      expect(content.text).not.toMatch(/<[a-z][\s\S]*>/i);
     }
   });
 
   it("includes an optional reason in DOCUMENT_REJECTED and AMOUNT_REJECTED content when given", () => {
     const rejected = buildEmailContent("DOCUMENT_REJECTED" as never, "AADHAAR", "Photo is blurry");
     expect(rejected.html).toContain("Photo is blurry");
+    expect(rejected.text).toContain("Photo is blurry");
 
     const amountRejected = buildEmailContent("AMOUNT_REJECTED" as never, "INV-0003", "Hours look wrong");
     expect(amountRejected.html).toContain("Hours look wrong");
+    expect(amountRejected.text).toContain("Hours look wrong");
   });
 
   it("names the acting resource in admin-facing events when actorLabel is supplied, falling back otherwise", () => {
     const label = "Ritika Garg <ritika@example.com>";
+    // The label contains `<`/`>` — HTML-escaped in the rendered email (see
+    // the escaping test below), so check for its escaped form here.
+    const escapedLabel = "Ritika Garg &lt;ritika@example.com&gt;";
     for (const event of ["AMOUNT_REJECTED", "INVOICE_DECLINED", "DOCUMENT_REUPLOADED", "INVOICE_NOT_PAID"]) {
       const withActor = buildEmailContent(event as never, "INV-0009", null, undefined, label);
-      expect(withActor.html).toContain(label);
+      expect(withActor.html).toContain(escapedLabel);
 
       const withoutActor = buildEmailContent(event as never, "INV-0009");
       expect(withoutActor.html).toContain("The resource");
     }
+  });
+
+  it("HTML-escapes dynamic values so a resource's own name/email can't inject markup", () => {
+    const hostile = 'Evil <script>alert(1)</script> & "Friends"';
+    const content = buildEmailContent("INVOICE_DECLINED" as never, "INV-0001", null, undefined, hostile);
+    expect(content.html).not.toContain("<script>");
+    expect(content.html).toContain("&lt;script&gt;");
+  });
+
+  it("adds a one-click CTA button/link when an appUrl is supplied, omitting it otherwise", () => {
+    const withUrl = buildEmailContent("PAYOUT_GENERATED" as never, "INV-0001", null, undefined, undefined, "https://app.example.com");
+    expect(withUrl.html).toContain('href="https://app.example.com/invoices"');
+    expect(withUrl.text).toContain("https://app.example.com/invoices");
+
+    const withoutUrl = buildEmailContent("PAYOUT_GENERATED" as never, "INV-0001");
+    expect(withoutUrl.html).not.toContain("<a href=");
+  });
+
+  it("builds a working invite link as the CTA for INVITE_SENT", () => {
+    const content = buildEmailContent(
+      "INVITE_SENT" as never,
+      "Jane Doe",
+      null,
+      "https://app.example.com/accept-invite?token=abc123"
+    );
+    expect(content.html).toContain('href="https://app.example.com/accept-invite?token=abc123"');
+    expect(content.text).toContain("https://app.example.com/accept-invite?token=abc123");
   });
 });

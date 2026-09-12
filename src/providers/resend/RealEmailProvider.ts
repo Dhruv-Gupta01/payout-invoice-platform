@@ -94,9 +94,9 @@ export class RealEmailProvider implements EmailProvider {
 
   async send(to: string, eventType: NotificationEvent, relatedId: string): Promise<void> {
     const { ref, reason, inviteUrl, actorLabel } = await resolveRefAndReason(eventType, relatedId);
-    const { subject, html } = buildEmailContent(eventType, ref, reason, inviteUrl, actorLabel);
+    const { subject, html, text } = buildEmailContent(eventType, ref, reason, inviteUrl, actorLabel, FRONTEND_BASE_URL);
 
-    const result = await this.resend.emails.send({ from: this.fromEmail, to, subject, html });
+    const result = await this.resend.emails.send({ from: this.fromEmail, to, subject, html, text });
     if (result.error) {
       throw new Error(`Resend send failed: ${result.error.message}`);
     }
