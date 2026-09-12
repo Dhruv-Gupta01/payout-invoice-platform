@@ -48,11 +48,20 @@ export async function runSync(sheetsProvider: SheetsProvider): Promise<SyncResul
 
     // LLD §0.1: upsert by natural key — never delete-and-reinsert, so an
     // existing Invoice's sheetRowId FK is never orphaned.
+    //
+    // resourceName + role are part of the key (not just resourceEmail +
+    // project/batch/month) because one email can legitimately be one
+    // shared/team inbox representing many different people's rows in the
+    // same project/batch/month — without name+role, every one of those
+    // rows collapses onto a single record, each sync overwriting the
+    // last (real data loss, not just a duplicate).
     const naturalKey = {
       resourceEmail: email,
       projectName: row.projectName,
       batch: row.batch,
       month: row.month,
+      resourceName: row.resourceName,
+      role: row.role,
     };
     const existingSheetRow = await prisma.sheetRow.findUnique({
       where: { sheet_row_natural_key: naturalKey },
@@ -62,8 +71,6 @@ export async function runSync(sheetsProvider: SheetsProvider): Promise<SyncResul
       const created = await prisma.sheetRow.create({
         data: {
           ...naturalKey,
-          resourceName: row.resourceName,
-          role: row.role,
           hours: row.hours,
           rate: row.rate,
           computedAmount: row.computedAmount,
@@ -77,9 +84,9 @@ export async function runSync(sheetsProvider: SheetsProvider): Promise<SyncResul
     } else {
       touchedSheetRowIds.push(existingSheetRow.id);
 
+      // resourceName/role are now part of the match key itself (see above),
+      // so they can't differ here — only the non-key fields can change.
       const changed =
-        existingSheetRow.resourceName !== row.resourceName ||
-        existingSheetRow.role !== row.role ||
         Number(existingSheetRow.hours) !== row.hours ||
         Number(existingSheetRow.rate) !== row.rate ||
         Number(existingSheetRow.computedAmount) !== row.computedAmount ||
@@ -89,8 +96,6 @@ export async function runSync(sheetsProvider: SheetsProvider): Promise<SyncResul
       await prisma.sheetRow.update({
         where: { sheet_row_natural_key: naturalKey },
         data: {
-          resourceName: row.resourceName,
-          role: row.role,
           hours: row.hours,
           rate: row.rate,
           computedAmount: row.computedAmount,

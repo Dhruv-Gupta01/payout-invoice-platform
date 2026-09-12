@@ -93,6 +93,8 @@ describe("POST /admin/sync — new row creates SheetRow + Resource", () => {
           projectName: "Project Alpha",
           batch: "Batch1",
           month: "2026-08",
+          resourceName: "New Resource",
+          role: "Developer",
         },
       },
     });
@@ -132,6 +134,8 @@ describe("POST /admin/sync — re-syncing the same row upserts, does not duplica
           projectName: "Project Alpha",
           batch: "Batch1",
           month: "2026-08",
+          resourceName: "New Resource",
+          role: "Developer",
         },
       },
     });
@@ -259,6 +263,8 @@ describe("POST /admin/sync — rows dropped from the sheet", () => {
           projectName: "Project B",
           batch: "Batch1",
           month: "2026-08",
+          resourceName: "New Resource",
+          role: "Developer",
         },
       },
     });
@@ -279,6 +285,8 @@ describe("POST /admin/sync — rows dropped from the sheet", () => {
           projectName: "Project A",
           batch: "Batch1",
           month: "2026-08",
+          resourceName: "New Resource",
+          role: "Developer",
         },
       },
     });

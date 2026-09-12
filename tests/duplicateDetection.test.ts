@@ -34,6 +34,7 @@ interface SheetRowOverrides {
   batch?: string;
   month?: string;
   computedAmount?: number;
+  resourceName?: string;
 }
 
 async function seedSheetRow(overrides: SheetRowOverrides = {}) {
@@ -114,6 +115,29 @@ describe("checkHardFlag", () => {
 
     expect(await checkHardFlag(newRow.id)).toBe(false);
   });
+
+  // A shared/team email is one Resource representing many different real
+  // people's rows — invoicing the first person in a batch must not
+  // false-flag every other person in the same project+batch as a
+  // "duplicate" just because they share the resource's email.
+  it("returns false for a different person under the same resource+project+batch", async () => {
+    await seedResource();
+    const invoicedRow = await seedSheetRow({ resourceName: "Alice" });
+    const resource = await prisma.resource.findUniqueOrThrow({ where: { email: "flag-test@example.com" } });
+    await prisma.invoice.create({
+      data: {
+        invoiceNo: "INV-HARD-0004",
+        sheetRowId: invoicedRow.id,
+        resourceId: resource.id,
+        amount: 1000,
+        generationStatus: "GENERATED",
+      },
+    });
+
+    const otherPersonRow = await seedSheetRow({ resourceName: "Bob" });
+
+    expect(await checkHardFlag(otherPersonRow.id)).toBe(false);
+  });
 });
 
 describe("checkSoftFlag", () => {
@@ -193,6 +217,27 @@ describe("checkSoftFlag", () => {
     const newRow = await seedSheetRow({ projectName: "Project Gamma" });
 
     expect(await checkSoftFlag(newRow.id)).toBeNull();
+  });
+
+  // Two different people paid through the same shared/team resource email
+  // coincidentally getting the same amount isn't a stale/re-invoiced
+  // amount for either of them — it's just a coincidence.
+  it("returns null when the same amount belongs to a different person under the same resource", async () => {
+    const resource = await seedResource();
+    const priorRow = await seedSheetRow({ projectName: "Project Beta", resourceName: "Alice" });
+    await prisma.invoice.create({
+      data: {
+        invoiceNo: "INV-SOFT-0005",
+        sheetRowId: priorRow.id,
+        resourceId: resource.id,
+        amount: 1000,
+        generationStatus: "GENERATED",
+      },
+    });
+
+    const otherPersonRow = await seedSheetRow({ projectName: "Project Gamma", resourceName: "Bob" });
+
+    expect(await checkSoftFlag(otherPersonRow.id)).toBeNull();
   });
 });
 

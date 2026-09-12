@@ -65,7 +65,14 @@ model SheetRow {
 
   invoice Invoice?
 
-  @@unique([resourceEmail, projectName, batch, month], name: "sheet_row_natural_key")
+  // One resource (one email) can have many rows — a shared/team email in
+  // the sheet legitimately represents many different people's line items
+  // in the same project/batch/month. The key originally didn't include
+  // resourceName/role, so every one of those distinct rows collapsed onto
+  // a single SheetRow (each sync overwriting the last) — real data loss,
+  // not just an "unchanged" report. resourceName + role is what actually
+  // distinguishes one person's row from another's under a shared email.
+  @@unique([resourceEmail, projectName, batch, month, resourceName, role], name: "sheet_row_natural_key")
   @@index([resourceEmail])
 }
 
