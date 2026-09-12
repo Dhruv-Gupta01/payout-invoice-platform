@@ -100,4 +100,102 @@ describe("POST /resource/onboarding", () => {
 
     expect(res.status).toBe(403);
   });
+
+  // Not spec, user-requested: format validation on the profile/bank fields
+  // (previously any string was accepted for PAN/IFSC/account/contact no.).
+  it("rejects a malformed PAN with 400 and does not save anything", async () => {
+    await seedResource();
+    const app = buildApp();
+    const agent = request.agent(app);
+    await loginAsResource(agent);
+
+    const res = await agent.post("/api/resource/onboarding").send({ ...ONBOARDING_BODY, pan: "not-a-pan" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe("pan");
+
+    const resource = await prisma.resource.findUniqueOrThrow({ where: { email: RESOURCE_EMAIL } });
+    expect(resource.onboardingCompleted).toBe(false);
+  });
+
+  it("rejects a malformed IFSC code with 400", async () => {
+    await seedResource();
+    const app = buildApp();
+    const agent = request.agent(app);
+    await loginAsResource(agent);
+
+    const res = await agent.post("/api/resource/onboarding").send({ ...ONBOARDING_BODY, ifsc: "TOOSHORT" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe("ifsc");
+  });
+
+  it("rejects an account number that isn't 9-18 digits", async () => {
+    await seedResource();
+    const app = buildApp();
+    const agent = request.agent(app);
+    await loginAsResource(agent);
+
+    const res = await agent.post("/api/resource/onboarding").send({ ...ONBOARDING_BODY, accountNo: "123" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe("accountNo");
+  });
+
+  it("rejects a contact number that isn't a valid 10-digit Indian mobile number", async () => {
+    await seedResource();
+    const app = buildApp();
+    const agent = request.agent(app);
+    await loginAsResource(agent);
+
+    const res = await agent.post("/api/resource/onboarding").send({ ...ONBOARDING_BODY, contactNo: "12345" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe("contactNo");
+  });
+
+  it("rejects a beneficiary name containing digits", async () => {
+    await seedResource();
+    const app = buildApp();
+    const agent = request.agent(app);
+    await loginAsResource(agent);
+
+    const res = await agent
+      .post("/api/resource/onboarding")
+      .send({ ...ONBOARDING_BODY, beneficiaryName: "Resource123" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe("beneficiaryName");
+  });
+
+  it("rejects a missing required field with 400", async () => {
+    await seedResource();
+    const app = buildApp();
+    const agent = request.agent(app);
+    await loginAsResource(agent);
+
+    const { address: _address, ...bodyWithoutAddress } = ONBOARDING_BODY;
+    const res = await agent.post("/api/resource/onboarding").send(bodyWithoutAddress);
+
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe("address");
+  });
+
+  it("normalizes PAN/IFSC to uppercase and trims whitespace before saving", async () => {
+    await seedResource();
+    const app = buildApp();
+    const agent = request.agent(app);
+    await loginAsResource(agent);
+
+    const res = await agent.post("/api/resource/onboarding").send({
+      ...ONBOARDING_BODY,
+      pan: " abcde1234f ",
+      ifsc: " exam0001234 ",
+    });
+
+    expect(res.status).toBe(200);
+    const resource = await prisma.resource.findUniqueOrThrow({ where: { email: RESOURCE_EMAIL } });
+    expect(resource.pan).toBe("ABCDE1234F");
+    expect(resource.ifsc).toBe("EXAM0001234");
+  });
 });

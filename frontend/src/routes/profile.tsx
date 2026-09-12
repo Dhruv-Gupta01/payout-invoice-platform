@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Loader2 } from "lucide-react";
@@ -8,6 +8,7 @@ import { BankNameCombobox } from "@/components/ops/BankNameCombobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { panError, ifscError, accountNoError, contactNoError, beneficiaryNameError } from "@/lib/fieldValidation";
 
 export const Route = createFileRoute("/profile")({
   head: () => ({
@@ -108,6 +109,19 @@ function ProfilePage() {
   const set = (key: keyof EditableFields) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => (f ? { ...f, [key]: e.target.value } : f));
 
+  // Only shown once a field has content — mirrors onboarding.tsx.
+  const errors = useMemo(
+    () => ({
+      contactNo: form?.contactNo.trim() ? contactNoError(form.contactNo) : null,
+      pan: form?.pan.trim() ? panError(form.pan) : null,
+      beneficiaryName: form?.beneficiaryName.trim() ? beneficiaryNameError(form.beneficiaryName) : null,
+      accountNo: form?.accountNo.trim() ? accountNoError(form.accountNo) : null,
+      ifsc: form?.ifsc.trim() ? ifscError(form.ifsc) : null,
+    }),
+    [form]
+  );
+  const hasErrors = Object.values(errors).some((e) => e !== null);
+
   if (profileQuery.isLoading) {
     return (
       <div className="min-h-screen bg-background">
@@ -173,12 +187,18 @@ function ProfilePage() {
                 </div>
                 {editing && form ? (
                   <>
-                    <EditField label="Contact number" value={form.contactNo} onChange={set("contactNo")} />
+                    <EditField
+                      label="Contact number"
+                      value={form.contactNo}
+                      onChange={set("contactNo")}
+                      error={errors.contactNo}
+                    />
                     <EditField
                       label="PAN"
                       value={form.pan}
                       onChange={set("pan")}
                       className="num uppercase"
+                      error={errors.pan}
                     />
                   </>
                 ) : (
@@ -225,12 +245,14 @@ function ProfilePage() {
                       label="Beneficiary name"
                       value={form.beneficiaryName}
                       onChange={set("beneficiaryName")}
+                      error={errors.beneficiaryName}
                     />
                     <EditField
                       label="Account number"
                       value={form.accountNo}
                       onChange={set("accountNo")}
                       className="num"
+                      error={errors.accountNo}
                     />
                     <div>
                       <label className="mb-1.5 block text-[12px] text-muted-foreground">Bank name</label>
@@ -244,6 +266,7 @@ function ProfilePage() {
                       value={form.ifsc}
                       onChange={set("ifsc")}
                       className="num uppercase"
+                      error={errors.ifsc}
                     />
                   </>
                 ) : (
@@ -260,7 +283,7 @@ function ProfilePage() {
             {editing && form && (
               <div className="mt-6 flex justify-end">
                 <Button
-                  disabled={save.isPending}
+                  disabled={save.isPending || hasErrors}
                   className="h-11 w-full px-5 text-[13px] font-medium tab:h-9 tab:w-auto"
                   onClick={() => save.mutate(form)}
                 >
@@ -294,12 +317,17 @@ function Field({ label, value, mono = false }: { label: string; value: string; m
 function EditField({
   label,
   className = "",
+  error,
   ...props
-}: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+}: { label: string; error?: string | null } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div>
       <label className="mb-1.5 block text-[12px] text-muted-foreground">{label}</label>
-      <Input {...props} className={`h-11 bg-card text-[13px] tab:h-9 ${className}`} />
+      <Input
+        {...props}
+        className={`h-11 bg-card text-[13px] tab:h-9 ${error ? "border-destructive focus-visible:ring-destructive" : ""} ${className}`}
+      />
+      {error && <p className="mt-1 text-[11px] text-destructive">{error}</p>}
     </div>
   );
 }

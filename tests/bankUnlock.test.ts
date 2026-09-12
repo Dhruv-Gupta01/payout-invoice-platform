@@ -135,4 +135,29 @@ describe("Bank unlock/re-lock flow", () => {
     const secondEditRes = await resourceAgent.put("/api/resource/profile").send({ contactNo: "7777777777" });
     expect(secondEditRes.status).toBe(403);
   });
+
+  // Not spec, user-requested: format validation on the profile/bank fields.
+  it("rejects a malformed field with 400 during an open edit window, without consuming it", async () => {
+    const admin = await seedAdmin();
+    const resource = await seedResource();
+    const app = buildApp();
+
+    const adminAgent = request.agent(app);
+    await loginAsAdmin(adminAgent);
+    await adminAgent.post(`/api/admin/resources/${resource.id}/unlock-bank`).send();
+
+    const resourceAgent = request.agent(app);
+    await loginAsResource(resourceAgent);
+
+    const badRes = await resourceAgent.put("/api/resource/profile").send({ ifsc: "TOOSHORT" });
+    expect(badRes.status).toBe(400);
+    expect(badRes.body.field).toBe("ifsc");
+
+    // The edit window is still open — a valid edit right after still works.
+    const goodRes = await resourceAgent.put("/api/resource/profile").send({ ifsc: "SBIN0001234" });
+    expect(goodRes.status).toBe(200);
+
+    const resourceAfter = await prisma.resource.findUniqueOrThrow({ where: { id: resource.id } });
+    expect(resourceAfter.ifsc).toBe("SBIN0001234");
+  });
 });

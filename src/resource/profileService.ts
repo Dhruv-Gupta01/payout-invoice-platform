@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma";
+import { validateProfileFieldFormats } from "../lib/fieldValidation";
 
 export class ProfileLockedError extends Error {}
 
@@ -51,9 +52,21 @@ export async function updateProfile(resourceId: string, input: ProfileUpdateInpu
     throw new ProfileLockedError();
   }
 
+  validateProfileFieldFormats(input);
+  const normalized: ProfileUpdateInput = {
+    ...input,
+    ...(input.address !== undefined && { address: input.address.trim() }),
+    ...(input.contactNo !== undefined && { contactNo: input.contactNo.trim() }),
+    ...(input.pan !== undefined && { pan: input.pan.trim().toUpperCase() }),
+    ...(input.beneficiaryName !== undefined && { beneficiaryName: input.beneficiaryName.trim() }),
+    ...(input.accountNo !== undefined && { accountNo: input.accountNo.trim() }),
+    ...(input.bankName !== undefined && { bankName: input.bankName.trim() }),
+    ...(input.ifsc !== undefined && { ifsc: input.ifsc.trim().toUpperCase() }),
+  };
+
   await prisma.resource.update({
     where: { id: resourceId },
-    data: { ...input, bankLocked: true },
+    data: { ...normalized, bankLocked: true },
   });
 
   const now = new Date();
@@ -64,5 +77,5 @@ export async function updateProfile(resourceId: string, input: ProfileUpdateInpu
     data: { editedAt: now, reLockedAt: now },
   });
 
-  return { ...input, bankLocked: true };
+  return { ...normalized, bankLocked: true };
 }

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BankNameCombobox } from "@/components/ops/BankNameCombobox";
 import { api, ApiError } from "@/lib/api";
+import { panError, ifscError, accountNoError, contactNoError, beneficiaryNameError } from "@/lib/fieldValidation";
 
 export const Route = createFileRoute("/onboarding")({
   head: () => ({
@@ -106,11 +107,25 @@ function OnboardingPage() {
     setTargetParam(null);
   };
 
+  // Only shown once a field has content — an untouched blank field isn't
+  // "wrong" yet, just incomplete (the "required" case is caught by `complete`).
+  const errors = useMemo(
+    () => ({
+      contactNo: values.contactNo.trim() ? contactNoError(values.contactNo) : null,
+      pan: values.pan.trim() ? panError(values.pan) : null,
+      beneficiaryName: values.beneficiaryName.trim() ? beneficiaryNameError(values.beneficiaryName) : null,
+      accountNo: values.accountNo.trim() ? accountNoError(values.accountNo) : null,
+      ifsc: values.ifsc.trim() ? ifscError(values.ifsc) : null,
+    }),
+    [values],
+  );
+
   const complete = useMemo(
     () =>
       Object.values(values).every((v) => v.trim() !== "") &&
+      Object.values(errors).every((e) => e === null) &&
       docs.every((d) => docsQuery.data?.some((doc) => doc.docType === d.key)),
-    [values, docsQuery.data],
+    [values, errors, docsQuery.data],
   );
 
   if (submitted) {
@@ -165,6 +180,7 @@ function OnboardingPage() {
               onChange={update("contactNo")}
               placeholder="Enter contact number"
               inputMode="tel"
+              error={errors.contactNo}
             />
             <Field
               label="PAN"
@@ -172,6 +188,7 @@ function OnboardingPage() {
               onChange={update("pan", true)}
               placeholder="Enter PAN"
               className="num"
+              error={errors.pan}
             />
           </div>
         </div>
@@ -207,6 +224,7 @@ function OnboardingPage() {
               value={values.beneficiaryName}
               onChange={update("beneficiaryName")}
               placeholder="Enter beneficiary name"
+              error={errors.beneficiaryName}
             />
             <Field
               label="Account number"
@@ -215,6 +233,7 @@ function OnboardingPage() {
               placeholder="Enter account number"
               inputMode="numeric"
               className="num"
+              error={errors.accountNo}
             />
             <div>
               <label className="mb-1.5 block text-[12px] text-muted-foreground">Bank name</label>
@@ -229,6 +248,7 @@ function OnboardingPage() {
               onChange={update("ifsc", true)}
               placeholder="Enter IFSC code"
               className="num"
+              error={errors.ifsc}
             />
           </div>
         </div>
@@ -278,12 +298,17 @@ function OnboardingPage() {
 function Field({
   label,
   className = "",
+  error,
   ...props
-}: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+}: { label: string; error?: string | null } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div>
       <label className="mb-1.5 block text-[12px] text-muted-foreground">{label}</label>
-      <Input {...props} className={`h-11 bg-card text-[13px] tab:h-9 ${className}`} />
+      <Input
+        {...props}
+        className={`h-11 bg-card text-[13px] tab:h-9 ${error ? "border-destructive focus-visible:ring-destructive" : ""} ${className}`}
+      />
+      {error && <p className="mt-1 text-[11px] text-destructive">{error}</p>}
     </div>
   );
 }

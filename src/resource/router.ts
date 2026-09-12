@@ -2,6 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { AppDependencies } from "../dependencies";
 import { asyncHandler } from "../lib/asyncHandler";
+import { FieldValidationError } from "../lib/fieldValidation";
 import { completeOnboarding, OnboardingAlreadyCompletedError } from "./onboardingService";
 import { parseDocTypeParam, uploadDocument, listDocuments } from "./documentService";
 import { updateProfile, getProfile, ProfileLockedError } from "./profileService";
@@ -38,6 +39,9 @@ export function createResourceRouter(deps: AppDependencies): Router {
       if (err instanceof OnboardingAlreadyCompletedError) {
         return res.status(403).json({ error: "Onboarding already completed" });
       }
+      if (err instanceof FieldValidationError) {
+        return res.status(400).json({ error: err.message, field: err.field });
+      }
       throw err;
     }
   }));
@@ -70,6 +74,9 @@ export function createResourceRouter(deps: AppDependencies): Router {
     } catch (err) {
       if (err instanceof ProfileLockedError) {
         return res.status(403).json({ error: "Details are locked. Ask your admin to unlock them." });
+      }
+      if (err instanceof FieldValidationError) {
+        return res.status(400).json({ error: err.message, field: err.field });
       }
       throw err;
     }

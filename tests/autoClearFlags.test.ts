@@ -32,7 +32,7 @@ const ONBOARDING_BODY = {
   beneficiaryName: "Autoclear Resource",
   accountNo: "111222333",
   bankName: "HDFC",
-  ifsc: "HDFC0001",
+  ifsc: "HDFC0000001",
 };
 
 async function seedAdmin() {
