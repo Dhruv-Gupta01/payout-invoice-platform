@@ -41,6 +41,10 @@ type SheetRow = {
   hours: number;
   rate: number;
   computedAmount: number;
+  // sheetAmount ?? computedAmount — the actual amount an invoice would use.
+  // computedAmount alone (hours × rate) shows ₹0 for rows paid per-item
+  // instead of per-hour, since their Hour column is blank on the sheet.
+  payableAmount: number;
   invoiceId: string | null;
   generationStatus: "FLAGGED" | "QUEUED" | "PROCESSING" | "GENERATED" | "FAILED" | null;
 };
@@ -186,7 +190,7 @@ export function Dashboard() {
   }, [pollingBatchId]);
 
   const allSelected = selected.length === rows.length && rows.length > 0;
-  const total = useMemo(() => rows.reduce((s, r) => s + r.computedAmount, 0), [rows]);
+  const total = useMemo(() => rows.reduce((s, r) => s + r.payableAmount, 0), [rows]);
 
   const toggleRow = (id: string) =>
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
@@ -382,7 +386,7 @@ export function Dashboard() {
                           <td className={td + " text-muted-foreground"}>{r.role}</td>
                           <td className={td + " num text-right"}>{r.hours}</td>
                           <td className={td + " num text-right"}>{inr(r.rate)}</td>
-                          <td className={td + " num text-right"}>{inr(r.computedAmount)}</td>
+                          <td className={td + " num text-right"}>{inr(r.payableAmount)}</td>
                           <td className={td}>
                             <GenerationBadge status={r.generationStatus} />
                           </td>
@@ -431,7 +435,7 @@ export function Dashboard() {
                       <span className="num">{inr(r.rate)}</span>
                     </MobileField>
                     <MobileField label="Amount">
-                      <span className="num">{inr(r.computedAmount)}</span>
+                      <span className="num">{inr(r.payableAmount)}</span>
                     </MobileField>
                   </MobileCard>
                 ))}

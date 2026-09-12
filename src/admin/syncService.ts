@@ -26,6 +26,12 @@ export async function runSync(sheetsProvider: SheetsProvider): Promise<SyncResul
   let rowsUnchanged = 0;
   const skipped: { rowRef: string; reason: string }[] = [];
   const touchedSheetRowIds: string[] = [];
+  // How many rows we've already seen this pass for a given (email, project,
+  // batch, month, name, role) combination — becomes duplicateIndex below.
+  // Only matters for the rare case of two rows that are identical on all of
+  // those fields (e.g. a "regular" row and a separate "rework" row for the
+  // same person in the same batch); everything else is always index 0.
+  const seenCounts = new Map<string, number>();
 
   for (const row of rows) {
     // LLD §2.2: "Email is lowercased + trimmed before matching... Rows with
@@ -55,6 +61,10 @@ export async function runSync(sheetsProvider: SheetsProvider): Promise<SyncResul
     // same project/batch/month — without name+role, every one of those
     // rows collapses onto a single record, each sync overwriting the
     // last (real data loss, not just a duplicate).
+    const seenKey = `${email}${row.projectName}${row.batch}${row.month}${row.resourceName}${row.role}`;
+    const duplicateIndex = seenCounts.get(seenKey) ?? 0;
+    seenCounts.set(seenKey, duplicateIndex + 1);
+
     const naturalKey = {
       resourceEmail: email,
       projectName: row.projectName,
@@ -62,6 +72,7 @@ export async function runSync(sheetsProvider: SheetsProvider): Promise<SyncResul
       month: row.month,
       resourceName: row.resourceName,
       role: row.role,
+      duplicateIndex,
     };
     const existingSheetRow = await prisma.sheetRow.findUnique({
       where: { sheet_row_natural_key: naturalKey },

@@ -140,6 +140,7 @@ describe("GET /admin/sheet-rows", () => {
       hours: 32,
       rate: 100,
       computedAmount: 3200,
+      payableAmount: 3200,
       invoiceId: null,
       generationStatus: null,
     });
@@ -155,8 +156,45 @@ describe("GET /admin/sheet-rows", () => {
       hours: 41,
       rate: 100,
       computedAmount: 4100,
+      payableAmount: 4100,
       invoiceId: invoice.id,
       generationStatus: "GENERATED",
     });
+  });
+
+  // Not spec, user-requested: some rows are paid per-item rather than
+  // per-hour, so their Hour column (and computedAmount = hours × rate) is
+  // legitimately 0 while the sheet's own Amount column has the real figure.
+  it("uses the sheet's Amount override for payableAmount when computedAmount would be 0", async () => {
+    await seedAdmin();
+    const resource = await prisma.resource.create({
+      data: { email: "sheetrows-override@example.com", name: "Override Resource" },
+    });
+    const row = await prisma.sheetRow.create({
+      data: {
+        resourceEmail: resource.email,
+        resourceName: resource.name,
+        month: "2026-08",
+        projectName: "PDF",
+        batch: "1",
+        role: "Annotator",
+        hours: 0, // blank Hour column on the sheet — paid per item instead
+        rate: 0.56,
+        computedAmount: 0,
+        sheetAmount: 1084.72,
+        rawData: {},
+      },
+    });
+
+    const app = buildApp();
+    const agent = request.agent(app);
+    await loginAsAdmin(agent);
+
+    const res = await agent.get("/api/admin/sheet-rows");
+    expect(res.status).toBe(200);
+
+    const body = res.body.find((r: { id: string }) => r.id === row.id);
+    expect(body.computedAmount).toBe(0);
+    expect(body.payableAmount).toBe(1084.72);
   });
 });

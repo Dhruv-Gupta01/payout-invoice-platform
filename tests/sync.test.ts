@@ -95,6 +95,7 @@ describe("POST /admin/sync — new row creates SheetRow + Resource", () => {
           month: "2026-08",
           resourceName: "New Resource",
           role: "Developer",
+          duplicateIndex: 0,
         },
       },
     });
@@ -136,6 +137,7 @@ describe("POST /admin/sync — re-syncing the same row upserts, does not duplica
           month: "2026-08",
           resourceName: "New Resource",
           role: "Developer",
+          duplicateIndex: 0,
         },
       },
     });
@@ -265,6 +267,7 @@ describe("POST /admin/sync — rows dropped from the sheet", () => {
           month: "2026-08",
           resourceName: "New Resource",
           role: "Developer",
+          duplicateIndex: 0,
         },
       },
     });
@@ -287,9 +290,62 @@ describe("POST /admin/sync — rows dropped from the sheet", () => {
           month: "2026-08",
           resourceName: "New Resource",
           role: "Developer",
+          duplicateIndex: 0,
         },
       },
     });
     expect(sheetRowAAfter.removedFromSheet).toBe(false);
+  });
+});
+
+// Traces to the shared/team-email data-loss fix: two sheet rows that match
+// on every field the natural key otherwise covers (same person, same
+// project/batch/month/role — e.g. a "regular" row and a separate "rework"
+// row) must still both be preserved as distinct SheetRows, not have the
+// second overwrite the first.
+describe("POST /admin/sync — two rows identical except in content both survive", () => {
+  beforeEach(cleanDb);
+
+  it("creates a separate SheetRow for each occurrence, and keeps updating them separately on re-sync", async () => {
+    await seedAdmin();
+    const sheetsProvider = new FakeSheetsProvider();
+    const regularRow = makeRow({ rowIndex: 1, hours: 51, computedAmount: 25.5 });
+    const reworkRow = makeRow({ rowIndex: 2, hours: 1, computedAmount: 0.2 });
+    sheetsProvider.setRows([regularRow, reworkRow]);
+    const app = createApp({ sheetsProvider, driveProvider: new FakeDriveProvider(), docsProvider: new FakeDocsProvider(), emailProvider: new FakeEmailProvider(), jobQueue: new FakeJobQueue() });
+    const agent = request.agent(app);
+    await loginAsAdmin(agent);
+
+    const res = await agent.post("/api/admin/sync").send();
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ rowsProcessed: 2, newResourcesCreated: 1, rowsUpdated: 0, rowsUnchanged: 0 });
+
+    const rows = await prisma.sheetRow.findMany({
+      where: { resourceEmail: "new-resource@example.com" },
+      orderBy: { duplicateIndex: "asc" },
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows[0].duplicateIndex).toBe(0);
+    expect(Number(rows[0].hours)).toBe(51);
+    expect(rows[1].duplicateIndex).toBe(1);
+    expect(Number(rows[1].hours)).toBe(1);
+
+    // Re-sync with corrected numbers, same two rows in the same order —
+    // each should update its own record in place, not collide.
+    sheetsProvider.setRows([
+      makeRow({ rowIndex: 1, hours: 52, computedAmount: 26 }),
+      makeRow({ rowIndex: 2, hours: 2, computedAmount: 0.4 }),
+    ]);
+    const res2 = await agent.post("/api/admin/sync").send();
+    expect(res2.status).toBe(200);
+    expect(res2.body).toMatchObject({ rowsProcessed: 2, newResourcesCreated: 0, rowsUpdated: 2, rowsUnchanged: 0 });
+
+    const rowsAfter = await prisma.sheetRow.findMany({
+      where: { resourceEmail: "new-resource@example.com" },
+      orderBy: { duplicateIndex: "asc" },
+    });
+    expect(rowsAfter).toHaveLength(2); // still no duplicate/collision
+    expect(Number(rowsAfter[0].hours)).toBe(52);
+    expect(Number(rowsAfter[1].hours)).toBe(2);
   });
 });

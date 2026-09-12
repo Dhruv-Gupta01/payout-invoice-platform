@@ -63,6 +63,16 @@ model SheetRow {
   lastSyncedAt    DateTime  @default(now())
   createdAt       DateTime  @default(now())
 
+  // 0 for the first row seen in a sync pass with a given (resourceEmail,
+  // projectName, batch, month, resourceName, role); 1 for the next row
+  // that's identical on all of those (e.g. the same person's "regular" row
+  // and a separate "rework" row in the same batch — nothing else in the
+  // sheet tells them apart), 2 for the one after that, etc. Exists purely
+  // so two genuinely-distinct sheet rows that happen to match on every
+  // other field still get two distinct SheetRow records instead of the
+  // second silently overwriting the first.
+  duplicateIndex  Int       @default(0)
+
   invoice Invoice?
 
   // One resource (one email) can have many rows — a shared/team email in
@@ -71,8 +81,10 @@ model SheetRow {
   // resourceName/role, so every one of those distinct rows collapsed onto
   // a single SheetRow (each sync overwriting the last) — real data loss,
   // not just an "unchanged" report. resourceName + role is what actually
-  // distinguishes one person's row from another's under a shared email.
-  @@unique([resourceEmail, projectName, batch, month, resourceName, role], name: "sheet_row_natural_key")
+  // distinguishes one person's row from another's under a shared email;
+  // duplicateIndex additionally covers the rarer case of two rows that
+  // match even on those.
+  @@unique([resourceEmail, projectName, batch, month, resourceName, role, duplicateIndex], name: "sheet_row_natural_key")
   @@index([resourceEmail])
 }
 
