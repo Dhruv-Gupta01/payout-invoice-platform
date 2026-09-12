@@ -113,6 +113,60 @@ describe("POST /admin/resources/:id/send-invite", () => {
   });
 });
 
+describe("POST /admin/resources/invite (bulk)", () => {
+  beforeEach(cleanDb);
+
+  it("invites every id in the list and reports a per-id result, one bad id not blocking the rest", async () => {
+    await seedAdmin();
+    const resourceA = await prisma.resource.create({ data: { email: "bulk-a@example.com", name: "Bulk A" } });
+    const resourceB = await prisma.resource.create({ data: { email: "bulk-b@example.com", name: "Bulk B" } });
+
+    const { app, emailProvider } = buildApp();
+    const agent = request.agent(app);
+    await loginAsAdmin(agent);
+
+    const res = await agent
+      .post("/api/admin/resources/invite")
+      .send({ resourceIds: [resourceA.id, resourceB.id, "nonexistent-id"] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.results).toHaveLength(3);
+
+    const okA = res.body.results.find((r: { resourceId: string }) => r.resourceId === resourceA.id);
+    const okB = res.body.results.find((r: { resourceId: string }) => r.resourceId === resourceB.id);
+    expect(okA.inviteExpiresAt).toBeTruthy();
+    expect(okB.inviteExpiresAt).toBeTruthy();
+
+    const failed = res.body.results.find((r: { resourceId: string }) => r.resourceId === "nonexistent-id");
+    expect(failed.error).toBeTruthy();
+
+    const updatedA = await prisma.resource.findUniqueOrThrow({ where: { id: resourceA.id } });
+    const updatedB = await prisma.resource.findUniqueOrThrow({ where: { id: resourceB.id } });
+    expect(updatedA.inviteToken).not.toBeNull();
+    expect(updatedB.inviteToken).not.toBeNull();
+
+    expect(emailProvider.sent).toEqual(
+      expect.arrayContaining([
+        { to: resourceA.email, eventType: "INVITE_SENT", relatedId: resourceA.id },
+        { to: resourceB.email, eventType: "INVITE_SENT", relatedId: resourceB.id },
+      ])
+    );
+  });
+
+  it("rejects an empty or malformed resourceIds with 400", async () => {
+    await seedAdmin();
+    const { app } = buildApp();
+    const agent = request.agent(app);
+    await loginAsAdmin(agent);
+
+    const empty = await agent.post("/api/admin/resources/invite").send({ resourceIds: [] });
+    expect(empty.status).toBe(400);
+
+    const notArray = await agent.post("/api/admin/resources/invite").send({ resourceIds: "not-an-array" });
+    expect(notArray.status).toBe(400);
+  });
+});
+
 describe("POST /auth/accept-invite", () => {
   beforeEach(cleanDb);
 

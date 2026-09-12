@@ -1,9 +1,11 @@
+import { useMemo, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { AppSidebar } from "@/components/ops/AppSidebar";
 import { MobileField } from "@/components/ops/MobileRow";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/resources/")({
@@ -25,7 +27,10 @@ export const Route = createFileRoute("/resources/")({
   component: ResourcesPage,
 });
 
-// LLD §2.5: GET /admin/resources
+// LLD §2.5: GET /admin/resources. accountActivated/inviteExpiresAt are an
+// addition beyond the LLD's fixed summary shape (not spec, user-requested) —
+// needed here to support inviting several resources at once without opening
+// each one's detail page first.
 type ResourceSummary = {
   id: string;
   name: string;
@@ -35,7 +40,12 @@ type ResourceSummary = {
   approved: number;
   declined: number;
   pendingDocuments: boolean;
+  accountActivated: boolean;
+  inviteExpiresAt: string | null;
 };
+
+// POST /admin/resources/invite (new endpoint, user-requested — group invite)
+type BulkInviteResult = { resourceId: string; inviteExpiresAt?: string; error?: string };
 
 const th = "px-3 py-2 text-left text-[12px] font-medium text-muted-foreground";
 const td = "px-3 text-[13px] text-foreground";
@@ -60,13 +70,58 @@ function Count({ n, tone }: { n: number; tone: keyof typeof counts }) {
   );
 }
 
+function inviteStatus(r: ResourceSummary): { label: string; className: string } {
+  if (r.accountActivated) {
+    return { label: "Active", className: "border-success/25 bg-success/10 text-success" };
+  }
+  if (r.inviteExpiresAt && new Date(r.inviteExpiresAt) > new Date()) {
+    return { label: "Invite sent", className: "border-border bg-muted text-muted-foreground" };
+  }
+  return { label: "Not invited", className: "border-warning/25 bg-warning/10 text-warning" };
+}
+
+function InviteStatusBadge({ resource }: { resource: ResourceSummary }) {
+  const { label, className } = inviteStatus(resource);
+  return (
+    <span className={"inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold " + className}>
+      {label}
+    </span>
+  );
+}
+
 function ResourcesPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["admin", "resources"],
     queryFn: () => api.get<ResourceSummary[]>("/admin/resources"),
   });
   const list = data ?? [];
+
+  const [selected, setSelected] = useState<string[]>([]);
+  const [inviteSummary, setInviteSummary] = useState<{ sent: number; failed: number } | null>(null);
+
+  const allSelected = selected.length === list.length && list.length > 0;
+  const toggleRow = (id: string) =>
+    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+
+  const bulkInvite = useMutation({
+    mutationFn: (resourceIds: string[]) =>
+      api.post<{ results: BulkInviteResult[] }>("/admin/resources/invite", { resourceIds }),
+    onSuccess: (result) => {
+      const failed = result.results.filter((r) => r.error).length;
+      setInviteSummary({ sent: result.results.length - failed, failed });
+      setSelected([]);
+      queryClient.invalidateQueries({ queryKey: ["admin", "resources"] });
+    },
+  });
+
+  const selectedActivatedCount = useMemo(
+    () => list.filter((r) => selected.includes(r.id) && r.accountActivated).length,
+    [list, selected]
+  );
+
+  const goToResource = (id: string) => navigate({ to: "/resources/$id", params: { id } });
 
   return (
     <div className="min-h-screen bg-background">
@@ -97,13 +152,51 @@ function ResourcesPage() {
             </div>
           ) : (
             <>
+              <div className="mb-4 flex flex-wrap items-center gap-3">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={selected.length === 0 || bulkInvite.isPending}
+                  className="h-11 gap-2 bg-card text-[13px] font-medium tab:h-8"
+                  onClick={() => bulkInvite.mutate(selected)}
+                >
+                  {bulkInvite.isPending && <Loader2 className="size-3.5 animate-spin" />}
+                  {bulkInvite.isPending
+                    ? "Sending invites…"
+                    : selected.length
+                      ? `Send invite (${selected.length})`
+                      : "Send invite"}
+                </Button>
+                {selected.length > 0 && (
+                  <span className="text-[12px] text-muted-foreground">
+                    {selected.length} selected
+                    {selectedActivatedCount > 0 &&
+                      ` — ${selectedActivatedCount} already active; re-inviting resets their sign-in link`}
+                  </span>
+                )}
+                {inviteSummary && !bulkInvite.isPending && (
+                  <span className="fade-in-150 text-[12px] text-muted-foreground">
+                    Sent {inviteSummary.sent}
+                    {inviteSummary.failed > 0 ? `, ${inviteSummary.failed} failed` : ""}.
+                  </span>
+                )}
+              </div>
+
               <div className="hidden overflow-hidden rounded-md border border-border bg-card tab:block">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[720px] border-collapse">
+                  <table className="w-full min-w-[820px] border-collapse">
                     <thead>
                       <tr className="border-b border-border">
+                        <th className={th + " w-10"}>
+                          <Checkbox
+                            checked={allSelected}
+                            onCheckedChange={(v) => setSelected(v ? list.map((r) => r.id) : [])}
+                            aria-label="Select all resources"
+                          />
+                        </th>
                         <th className={th + " sticky left-0 z-10 bg-card xl:static"}>Name</th>
                         <th className={th}>Email</th>
+                        <th className={th}>Invite status</th>
                         <th className={th + " text-right"}>Total invoices</th>
                         <th className={th + " text-right"}>Pending</th>
                         <th className={th + " text-right"}>Approved</th>
@@ -116,13 +209,19 @@ function ResourcesPage() {
                           key={r.id}
                           tabIndex={0}
                           role="link"
-                          onClick={() => navigate({ to: "/resources/$id", params: { id: r.id } })}
+                          onClick={() => goToResource(r.id)}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter")
-                              navigate({ to: "/resources/$id", params: { id: r.id } });
+                            if (e.key === "Enter") goToResource(r.id);
                           }}
                           className="group h-12 cursor-pointer border-b border-border transition-colors duration-150 outline-none last:border-0 hover:bg-muted/50 focus-visible:bg-muted/50"
                         >
+                          <td className={td} onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selected.includes(r.id)}
+                              onCheckedChange={() => toggleRow(r.id)}
+                              aria-label={`Select ${r.name}`}
+                            />
+                          </td>
                           <td
                             className={
                               td + " sticky left-0 z-10 bg-card group-hover:bg-muted/50 xl:static"
@@ -138,6 +237,9 @@ function ResourcesPage() {
                             </span>
                           </td>
                           <td className={td + " text-muted-foreground"}>{r.email}</td>
+                          <td className={td}>
+                            <InviteStatusBadge resource={r} />
+                          </td>
                           <td className={td + " num text-right"}>{r.totalInvoices}</td>
                           <td className={td + " text-right"}>
                             <Count n={r.pending} tone="pending" />
@@ -158,23 +260,39 @@ function ResourcesPage() {
               {/* Mobile: stacked cards */}
               <div className="flex flex-col gap-3 tab:hidden">
                 {list.map((r) => (
-                  <button
+                  <div
                     key={r.id}
-                    type="button"
-                    onClick={() => navigate({ to: "/resources/$id", params: { id: r.id } })}
-                    className="w-full rounded-md border border-border bg-card p-4 text-left"
+                    role="link"
+                    tabIndex={0}
+                    onClick={() => goToResource(r.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") goToResource(r.id);
+                    }}
+                    className="w-full cursor-pointer rounded-md border border-border bg-card p-4 text-left"
                   >
                     <div className="flex flex-col gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[14px] font-medium text-foreground">{r.name}</span>
-                        {r.pendingDocuments && (
-                          <span className="inline-flex items-center rounded-full border border-warning/25 bg-warning/10 px-1.5 py-[1px] text-[10px] font-semibold text-warning">
-                            Docs pending
-                          </span>
-                        )}
+                      <div className="flex items-start gap-2">
+                        <span onClick={(e) => e.stopPropagation()} className="pt-0.5">
+                          <Checkbox
+                            checked={selected.includes(r.id)}
+                            onCheckedChange={() => toggleRow(r.id)}
+                            aria-label={`Select ${r.name}`}
+                          />
+                        </span>
+                        <div className="flex flex-1 flex-wrap items-center gap-2">
+                          <span className="text-[14px] font-medium text-foreground">{r.name}</span>
+                          {r.pendingDocuments && (
+                            <span className="inline-flex items-center rounded-full border border-warning/25 bg-warning/10 px-1.5 py-[1px] text-[10px] font-semibold text-warning">
+                              Docs pending
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <MobileField label="Email">
                         <span className="break-all text-muted-foreground">{r.email}</span>
+                      </MobileField>
+                      <MobileField label="Invite status">
+                        <InviteStatusBadge resource={r} />
                       </MobileField>
                       <MobileField label="Total invoices">
                         <span className="num">{r.totalInvoices}</span>
@@ -189,7 +307,7 @@ function ResourcesPage() {
                         <Count n={r.declined} tone="declined" />
                       </MobileField>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             </>

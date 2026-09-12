@@ -25,3 +25,23 @@ export async function sendInvite(resourceId: string, emailProvider: EmailProvide
 
   return { resourceId: resource.id, inviteExpiresAt: resource.inviteTokenExpiresAt };
 }
+
+// POST /admin/resources/invite (new endpoint, user-requested — group/bulk
+// invite from the Resources list, so the admin isn't opening each resource's
+// detail page one at a time). Reuses sendInvite per id, sequentially — invite
+// volume here is small (a batch of new sheet resources, not a mass-email
+// job) and this keeps one resource's failure (e.g. a since-deleted id) from
+// aborting the rest. Reports success/failure per id rather than throwing on
+// the first bad one, same reporting shape as sync's per-row skip list.
+export async function sendInvites(resourceIds: string[], emailProvider: EmailProvider) {
+  const results: { resourceId: string; inviteExpiresAt?: Date | null; error?: string }[] = [];
+  for (const resourceId of resourceIds) {
+    try {
+      const result = await sendInvite(resourceId, emailProvider);
+      results.push(result);
+    } catch (err) {
+      results.push({ resourceId, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return results;
+}

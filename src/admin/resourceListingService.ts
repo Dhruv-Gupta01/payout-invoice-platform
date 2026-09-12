@@ -6,6 +6,12 @@ import { toAdminInvoiceListItem } from "../invoices/invoiceListingService";
 // GET /admin/resources
 // Response 200: [{ id, name, email, totalInvoices, pending, approved, declined, pendingDocuments: boolean }]
 //
+// accountActivated/inviteExpiresAt are additions beyond the LLD's fixed
+// summary shape (not spec, user-requested) — the resource list needs to
+// know who's already invited/activated to support inviting several
+// resources at once (bulk send-invite) without opening each detail page
+// first. Same fields/semantics as GET /admin/resources/:id below.
+//
 // The LLD fixes the summary shape to exactly {pending, approved, declined}
 // but the model has more granular states than that (two gates —
 // AmountConfirmationStatus and ApprovalStatus — plus pre-generation
@@ -48,6 +54,8 @@ export async function listResources() {
       approved,
       declined,
       pendingDocuments,
+      accountActivated: resource.passwordHash !== null,
+      inviteExpiresAt: resource.inviteTokenExpiresAt,
     };
   });
 }

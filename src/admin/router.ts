@@ -20,7 +20,7 @@ import {
 } from "./invoiceGenerationService";
 import { verifyDocument, rejectDocument } from "./documentReviewService";
 import { unlockBank } from "./bankUnlockService";
-import { sendInvite } from "./inviteService";
+import { sendInvite, sendInvites } from "./inviteService";
 import {
   runReconciliation,
   markInvoicePaid,
@@ -157,6 +157,17 @@ export function createAdminRouter(deps: AppDependencies): Router {
   router.post("/resources/:id/send-invite", asyncHandler(async (req, res) => {
     const result = await sendInvite(req.params.id, deps.emailProvider);
     res.status(200).json(result);
+  }));
+
+  // Bulk/group version of the above — invite several resources at once from
+  // the Resources list (new endpoint, user-requested).
+  router.post("/resources/invite", asyncHandler(async (req, res) => {
+    const resourceIds = req.body?.resourceIds;
+    if (!Array.isArray(resourceIds) || resourceIds.some((id) => typeof id !== "string") || resourceIds.length === 0) {
+      return res.status(400).json({ error: "resourceIds must be a non-empty array of strings" });
+    }
+    const results = await sendInvites(resourceIds, deps.emailProvider);
+    res.status(200).json({ results });
   }));
 
   router.get("/resources/:id/documents", asyncHandler(async (req, res) => {

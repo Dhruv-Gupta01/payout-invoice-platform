@@ -172,6 +172,8 @@ describe("GET /admin/resources", () => {
       approved: 1,
       declined: 0,
       pendingDocuments: true,
+      accountActivated: false,
+      inviteExpiresAt: null,
     });
 
     const b = res.body.find((r: { id: string }) => r.id === resourceB.id);
@@ -184,7 +186,37 @@ describe("GET /admin/resources", () => {
       approved: 0,
       declined: 2,
       pendingDocuments: false,
+      accountActivated: false,
+      inviteExpiresAt: null,
     });
+  });
+
+  it("surfaces accountActivated and inviteExpiresAt on the list summary", async () => {
+    await seedAdmin();
+    const activated = await prisma.resource.create({
+      data: { email: "reslist-activated@example.com", name: "Activated", passwordHash: "hash" },
+    });
+    const invited = await prisma.resource.create({
+      data: {
+        email: "reslist-invited@example.com",
+        name: "Invited",
+        inviteToken: "tok",
+        inviteTokenExpiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      },
+    });
+
+    const app = buildApp();
+    const agent = request.agent(app);
+    await loginAsAdmin(agent);
+
+    const res = await agent.get("/api/admin/resources");
+    expect(res.status).toBe(200);
+
+    const a = res.body.find((r: { id: string }) => r.id === activated.id);
+    expect(a).toMatchObject({ accountActivated: true, inviteExpiresAt: null });
+
+    const i = res.body.find((r: { id: string }) => r.id === invited.id);
+    expect(i).toMatchObject({ accountActivated: false, inviteExpiresAt: "2027-01-01T00:00:00.000Z" });
   });
 });
 
