@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { DocumentViewerDialog } from "./DocumentViewerDialog";
 
 // LLD §2.7: Document.docType enum.
 export type DocType = "AADHAAR" | "PAN" | "PHOTO" | "BANK_PROOF" | "NDA" | "ICA";
@@ -66,6 +67,7 @@ export function DocumentsSection({ resourceId, documents }: { resourceId: string
   const queryClient = useQueryClient();
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const [viewing, setViewing] = useState<{ url: string; label: string } | null>(null);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["admin", "resources", resourceId] });
 
@@ -96,14 +98,13 @@ export function DocumentsSection({ resourceId, documents }: { resourceId: string
                 <div className="text-[13px] text-foreground tab:min-w-[220px]">{cat.label}</div>
                 {doc ? (
                   <>
-                    <a
-                      href={doc.fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[13px] text-primary underline-offset-4 hover:underline"
+                    <button
+                      type="button"
+                      onClick={() => setViewing({ url: doc.fileUrl, label: cat.label })}
+                      className="cursor-pointer text-[13px] text-primary underline-offset-4 hover:underline"
                     >
                       View
-                    </a>
+                    </button>
                     <div className="flex flex-wrap items-center gap-3 tab:ml-auto">
                       <DocBadge status={doc.status} />
                       {doc.status === "PENDING_REVIEW" && (
@@ -181,6 +182,12 @@ export function DocumentsSection({ resourceId, documents }: { resourceId: string
           );
         })}
       </div>
+
+      <DocumentViewerDialog
+        url={viewing?.url ?? null}
+        title={viewing?.label}
+        onOpenChange={(open) => !open && setViewing(null)}
+      />
     </div>
   );
 }

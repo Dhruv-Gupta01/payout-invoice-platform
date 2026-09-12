@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 
 import { ResourceSidebar } from "@/components/ops/ResourceSidebar";
+import { DocumentViewerDialog } from "@/components/ops/DocumentViewerDialog";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 
@@ -89,6 +90,7 @@ function DocumentsPage() {
   });
   const pickerRef = useRef<HTMLInputElement>(null);
   const [targetParam, setTargetParam] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ url: string; label: string } | null>(null);
 
   const upload = useMutation({
     mutationFn: ({ param, file }: { param: string; file: File }) =>
@@ -139,9 +141,13 @@ function DocumentsPage() {
                       <div className="text-[13px] text-foreground tab:min-w-[220px]">{cat.label}</div>
                       <div className="flex flex-wrap items-center gap-3 text-[13px] text-muted-foreground">
                         {doc ? (
-                          <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                          <button
+                            type="button"
+                            onClick={() => setViewing({ url: doc.fileUrl, label: cat.label })}
+                            className="cursor-pointer text-primary hover:underline"
+                          >
                             View uploaded file
-                          </a>
+                          </button>
                         ) : (
                           "Not uploaded"
                         )}
@@ -194,6 +200,12 @@ function DocumentsPage() {
           )}
         </div>
       </main>
+
+      <DocumentViewerDialog
+        url={viewing?.url ?? null}
+        title={viewing?.label}
+        onOpenChange={(open) => !open && setViewing(null)}
+      />
     </div>
   );
 }
