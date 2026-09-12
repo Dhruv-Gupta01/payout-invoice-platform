@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Loader2 } from "lucide-react";
 
 import { ResourceSidebar } from "@/components/ops/ResourceSidebar";
+import { BankNameCombobox } from "@/components/ops/BankNameCombobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
@@ -231,7 +232,13 @@ function ProfilePage() {
                       onChange={set("accountNo")}
                       className="num"
                     />
-                    <EditField label="Bank name" value={form.bankName} onChange={set("bankName")} />
+                    <div>
+                      <label className="mb-1.5 block text-[12px] text-muted-foreground">Bank name</label>
+                      <BankNameCombobox
+                        value={form.bankName}
+                        onChange={(v) => setForm((f) => (f ? { ...f, bankName: v } : f))}
+                      />
+                    </div>
                     <EditField
                       label="IFSC code"
                       value={form.ifsc}

@@ -5,6 +5,7 @@ import { AlertTriangle, Check, Loader2, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { BankNameCombobox } from "@/components/ops/BankNameCombobox";
 import { api, ApiError } from "@/lib/api";
 
 export const Route = createFileRoute("/onboarding")({
@@ -215,12 +216,13 @@ function OnboardingPage() {
               inputMode="numeric"
               className="num"
             />
-            <Field
-              label="Bank name"
-              value={values.bankName}
-              onChange={update("bankName")}
-              placeholder="Enter bank name"
-            />
+            <div>
+              <label className="mb-1.5 block text-[12px] text-muted-foreground">Bank name</label>
+              <BankNameCombobox
+                value={values.bankName}
+                onChange={(v) => setValues((prev) => ({ ...prev, bankName: v }))}
+              />
+            </div>
             <Field
               label="IFSC code"
               value={values.ifsc}
