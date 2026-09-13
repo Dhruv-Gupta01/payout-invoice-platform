@@ -252,20 +252,39 @@ export function Dashboard() {
             <div className="fade-in-150 mb-4 rounded-md border border-destructive/25 bg-destructive/10 px-4 py-3 text-[12px] text-destructive">
               <p className="font-medium">{flagged.length} row(s) held — needs your review before generating:</p>
               <ul className="mt-2 flex flex-col gap-2">
-                {flagged.map((f) => (
-                  <li key={f.invoiceId} className="flex flex-wrap items-center justify-between gap-2">
-                    <span>{f.flagReason}</span>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={acknowledgeFlag.isPending}
-                      className="h-8 border-destructive/30 text-destructive hover:bg-destructive/10"
-                      onClick={() => acknowledgeFlag.mutate(f.invoiceId)}
-                    >
-                      Acknowledge & queue
-                    </Button>
-                  </li>
-                ))}
+                {flagged.map((f) => {
+                  // Cross-reference against the already-loaded sheet rows so
+                  // the banner names who/what each flag is about, instead of
+                  // showing only the reason text with no way to tell which
+                  // row it belongs to (user-reported gap).
+                  const row = rows.find((r) => r.id === f.sheetRowId);
+                  return (
+                    <li key={f.invoiceId} className="flex flex-col gap-1 border-b border-destructive/15 pb-2 last:border-0 last:pb-0">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        {row ? (
+                          <span className="font-medium text-foreground">
+                            {row.resourceName}{" "}
+                            <span className="font-normal text-muted-foreground">
+                              — {row.projectName} / {row.batch} — {inr(row.payableAmount)}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="font-medium text-foreground">Row {f.sheetRowId}</span>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={acknowledgeFlag.isPending}
+                          className="h-8 border-destructive/30 text-destructive hover:bg-destructive/10"
+                          onClick={() => acknowledgeFlag.mutate(f.invoiceId)}
+                        >
+                          Acknowledge & queue
+                        </Button>
+                      </div>
+                      <span>{f.flagReason}</span>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
