@@ -6,7 +6,7 @@ import { DriveProvider } from "../providers/DriveProvider";
 import { DocsProvider } from "../providers/DocsProvider";
 import { EmailProvider } from "../providers/EmailProvider";
 import { notify } from "../notifications/notifier";
-import { checkHardFlag, checkSoftFlag } from "./duplicateDetection";
+import { checkHardFlag, checkSoftFlag, checkAccountAmountFlag } from "./duplicateDetection";
 import { checkOnboardingIncomplete, checkDocumentsNotVerified } from "./resourceReadiness";
 import { buildPlaceholderRequests } from "../worker/placeholderRequests";
 import { TEMPLATE_ID, TARGET_FOLDER_ID, buildDriveUrl } from "../worker/driveConfig";
@@ -244,6 +244,9 @@ export async function acknowledgeFlag(invoiceId: string, adminId: string, jobQue
 // guaranteed self-match false positive that would make a duplicate-flagged
 // invoice's hard flag look permanently true. The stored text is a reliable,
 // simpler signal for "was this flag (also) a duplicate/amount judgment call".
+// The account+amount-vs-reconciliation-history flag (checkAccountAmountFlag)
+// shares the "Duplicate:" prefix with the hard flag — same category, same
+// treatment (overridable, not auto-cleared).
 const JUDGMENT_CALL_MARKERS = ["Duplicate:", "Same amount within"];
 
 // New per user request (LLD): nothing previously re-checked a resource's
@@ -295,6 +298,7 @@ export async function generateInvoices(sheetRowIds: string[], jobQueue: JobQueue
 
     const hardFlagged = await checkHardFlag(sheetRowId);
     const softFlagMatch = await checkSoftFlag(sheetRowId);
+    const accountAmountMatch = await checkAccountAmountFlag(sheetRowId);
     const onboardingReason = checkOnboardingIncomplete(resource);
     const documentsReason = await checkDocumentsNotVerified(resource.id);
 
@@ -304,6 +308,14 @@ export async function generateInvoices(sheetRowIds: string[], jobQueue: JobQueue
     }
     if (softFlagMatch) {
       reasons.push(`Same amount within the last 90 days (${softFlagMatch.invoiceNo})`);
+    }
+    if (accountAmountMatch) {
+      // "Duplicate:" prefix (see JUDGMENT_CALL_MARKERS above) — same
+      // treatment as the other two: an admin judgment call, freely
+      // overridable via acknowledge-flag, not auto-cleared.
+      reasons.push(
+        `Duplicate: same account number and amount already paid via ${accountAmountMatch.invoiceNo} on ${accountAmountMatch.paidAt.toISOString().slice(0, 10)}`
+      );
     }
     if (onboardingReason) {
       reasons.push(onboardingReason);

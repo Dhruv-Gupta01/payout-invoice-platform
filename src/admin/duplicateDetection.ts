@@ -64,3 +64,40 @@ export async function checkSoftFlag(
 
   return match;
 }
+
+// Account+amount flag (not LLD spec — user-requested): same bank account
+// number + same amount already paid out before, per bank reconciliation
+// history (any invoice that's ever been matched against an uploaded bank
+// statement — paidAt set) — regardless of which Resource record or
+// project/batch it was invoiced under, and with no time window.
+//
+// This is deliberately not scoped to resourceId like the soft flag above:
+// the hard/soft flags protect against re-invoicing the same *bookkeeping*
+// record; this one protects the actual bank transfer — the same account
+// number receiving the same amount twice is the real-world risk (a synced
+// row surviving a resource being re-created under a corrected email, two
+// resources that happen to share a bank account, or an already-paid sheet
+// row lingering and getting re-selected). Requires the resource to already
+// have an account number on file — nothing to compare against otherwise.
+export async function checkAccountAmountFlag(
+  sheetRowId: string
+): Promise<{ invoiceNo: string; paidAt: Date } | null> {
+  const sheetRow = await prisma.sheetRow.findUniqueOrThrow({ where: { id: sheetRowId } });
+  const resource = await prisma.resource.findUniqueOrThrow({ where: { email: sheetRow.resourceEmail } });
+  if (!resource.accountNo) {
+    return null;
+  }
+  const amount = sheetRow.sheetAmount ?? sheetRow.computedAmount;
+
+  const match = await prisma.invoice.findFirst({
+    where: {
+      paidAt: { not: null },
+      amount,
+      resource: { accountNo: resource.accountNo },
+    },
+    orderBy: { paidAt: "desc" },
+    select: { invoiceNo: true, paidAt: true },
+  });
+
+  return match ? { invoiceNo: match.invoiceNo, paidAt: match.paidAt! } : null;
+}

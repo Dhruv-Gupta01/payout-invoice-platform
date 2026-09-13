@@ -37,7 +37,7 @@ async function loginAsAdmin(agent: ReturnType<typeof request.agent>) {
 // duplicate/stale-amount detection. Tests about *that* logic specifically
 // seed a fully "ready" resource so it isn't incidentally flagged for a
 // readiness reason instead of the one under test.
-async function seedReadyResource(data: { email: string; name: string }) {
+async function seedReadyResource(data: { email: string; name: string; accountNo?: string }) {
   const resource = await prisma.resource.create({ data: { ...data, onboardingCompleted: true } });
   for (const docType of ["AADHAAR", "PAN", "PHOTO", "BANK_PROOF", "NDA", "ICA"] as const) {
     await prisma.document.create({
@@ -199,6 +199,80 @@ describe("POST /admin/invoices/generate", () => {
     expect(invoice.invoiceNo).toMatch(/^INV-\d{4,}$/);
 
     expect(jobQueue.enqueued).toEqual([invoiceId]);
+  });
+});
+
+// Not LLD spec, user-requested: flag at generation time if this account
+// number + amount has already been paid out before, per bank reconciliation
+// history — independent of the resource/project/batch-scoped hard/soft
+// flags above. Overridable via acknowledge-flag like the other two (same
+// "Duplicate:" prefix), with the usual audit stamp (flagAcknowledgedBy/At).
+describe("POST /admin/invoices/generate — account number + amount vs. reconciliation history", () => {
+  beforeEach(cleanDb);
+
+  it("flags a row whose resource's account number + amount was already paid under a different resource/project/batch", async () => {
+    const admin = await seedAdmin();
+
+    // A resource paid out previously, reconciled (paidAt set).
+    const paidResource = await seedReadyResource({
+      email: "acct-paid@example.com",
+      name: "Acct Paid Resource",
+      accountNo: "999888777666",
+    });
+    const paidRow = await prisma.sheetRow.create({
+      data: {
+        resourceEmail: paidResource.email, resourceName: paidResource.name, month: "2026-07",
+        projectName: "Old Project", batch: "OldBatch", role: "Developer",
+        hours: 10, rate: 100, computedAmount: 1000, rawData: {},
+      },
+    });
+    await prisma.invoice.create({
+      data: {
+        invoiceNo: "INV-ACCTFLAG-0001",
+        sheetRowId: paidRow.id,
+        resourceId: paidResource.id,
+        amount: 1000,
+        generationStatus: "GENERATED",
+        approvalStatus: "APPROVED",
+        paidAt: new Date("2026-08-01T00:00:00.000Z"),
+      },
+    });
+
+    // A different resource, same account number, same amount, brand-new row.
+    const newResource = await seedReadyResource({
+      email: "acct-new@example.com",
+      name: "Acct New Resource",
+      accountNo: "999888777666",
+    });
+    const newRow = await prisma.sheetRow.create({
+      data: {
+        resourceEmail: newResource.email, resourceName: newResource.name, month: "2026-09",
+        projectName: "New Project", batch: "NewBatch", role: "Developer",
+        hours: 10, rate: 100, computedAmount: 1000, rawData: {},
+      },
+    });
+
+    const app = createApp({ sheetsProvider: new FakeSheetsProvider(), driveProvider: new FakeDriveProvider(), docsProvider: new FakeDocsProvider(), emailProvider: new FakeEmailProvider(), jobQueue: new FakeJobQueue() });
+    const agent = request.agent(app);
+    await loginAsAdmin(agent);
+
+    const res = await agent.post("/api/admin/invoices/generate").send({ sheetRowIds: [newRow.id] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.flagged).toHaveLength(1);
+    expect(res.body.flagged[0].flagReason).toContain("Duplicate:");
+    expect(res.body.flagged[0].flagReason).toContain("INV-ACCTFLAG-0001");
+
+    // Overridable, same as the other duplicate/stale-amount reasons.
+    const ackRes = await agent
+      .post(`/api/admin/invoices/${res.body.flagged[0].invoiceId}/acknowledge-flag`)
+      .send();
+    expect(ackRes.status).toBe(200);
+    expect(ackRes.body.generationStatus).toBe("QUEUED");
+
+    const updated = await prisma.invoice.findUniqueOrThrow({ where: { id: res.body.flagged[0].invoiceId } });
+    expect(updated.flagAcknowledgedBy).toBe(admin.id);
+    expect(updated.flagAcknowledgedAt).not.toBeNull();
   });
 });
 

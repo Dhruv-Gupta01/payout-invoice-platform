@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { prisma } from "../src/lib/prisma";
-import { checkHardFlag, checkSoftFlag } from "../src/admin/duplicateDetection";
+import { checkHardFlag, checkSoftFlag, checkAccountAmountFlag } from "../src/admin/duplicateDetection";
 
 // Traces to LLD §3 (Duplicate & Stale-Amount Detection — query logic):
 //
@@ -250,5 +250,127 @@ describe("neither flag triggers", () => {
 
     expect(await checkHardFlag(row.id)).toBe(false);
     expect(await checkSoftFlag(row.id)).toBeNull();
+  });
+});
+
+// Not LLD spec, user-requested: flag at generation time if this account
+// number + amount has already been paid out before (per reconciliation
+// history — any invoice with paidAt set), regardless of which Resource or
+// project/batch it was invoiced under.
+describe("checkAccountAmountFlag", () => {
+  beforeEach(cleanDb);
+
+  it("returns null when the resource has no account number on file yet", async () => {
+    await seedResource();
+    const row = await seedSheetRow();
+
+    expect(await checkAccountAmountFlag(row.id)).toBeNull();
+  });
+
+  it("returns null when no invoice has ever been paid with this account number + amount", async () => {
+    await prisma.resource.create({
+      data: { email: "flag-test@example.com", name: "Flag Test Resource", accountNo: "111222333444" },
+    });
+    const row = await seedSheetRow();
+
+    expect(await checkAccountAmountFlag(row.id)).toBeNull();
+  });
+
+  it("returns null when the matching account+amount invoice was never paid (paidAt null)", async () => {
+    const resource = await prisma.resource.create({
+      data: { email: "flag-test@example.com", name: "Flag Test Resource", accountNo: "111222333444" },
+    });
+    const priorRow = await seedSheetRow({ projectName: "Project Beta" });
+    await prisma.invoice.create({
+      data: {
+        invoiceNo: "INV-ACCT-0001",
+        sheetRowId: priorRow.id,
+        resourceId: resource.id,
+        amount: 1000,
+        generationStatus: "GENERATED",
+        approvalStatus: "APPROVED",
+        // paidAt intentionally left null -- never reconciled.
+      },
+    });
+
+    const newRow = await seedSheetRow({ projectName: "Project Gamma" });
+    expect(await checkAccountAmountFlag(newRow.id)).toBeNull();
+  });
+
+  it("flags when the same account number + amount was already paid, even under a different resource", async () => {
+    const paidResource = await prisma.resource.create({
+      data: { email: "already-paid@example.com", name: "Already Paid", accountNo: "999888777666" },
+    });
+    const paidRow = await prisma.sheetRow.create({
+      data: {
+        resourceEmail: paidResource.email,
+        resourceName: paidResource.name,
+        month: "2026-07",
+        projectName: "Old Project",
+        batch: "OldBatch",
+        role: "Developer",
+        hours: 10,
+        rate: 100,
+        computedAmount: 1000,
+        rawData: {},
+      },
+    });
+    const paidAt = new Date("2026-08-01T00:00:00.000Z");
+    await prisma.invoice.create({
+      data: {
+        invoiceNo: "INV-ACCT-0002",
+        sheetRowId: paidRow.id,
+        resourceId: paidResource.id,
+        amount: 1000,
+        generationStatus: "GENERATED",
+        approvalStatus: "APPROVED",
+        paidAt,
+      },
+    });
+
+    // A different resource, same account number, same amount, brand-new row.
+    const newResource = await prisma.resource.create({
+      data: { email: "flag-test@example.com", name: "Flag Test Resource", accountNo: "999888777666" },
+    });
+    const newRow = await prisma.sheetRow.create({
+      data: {
+        resourceEmail: newResource.email,
+        resourceName: newResource.name,
+        month: "2026-09",
+        projectName: "New Project",
+        batch: "NewBatch",
+        role: "Developer",
+        hours: 10,
+        rate: 100,
+        computedAmount: 1000,
+        rawData: {},
+      },
+    });
+
+    const result = await checkAccountAmountFlag(newRow.id);
+    expect(result).not.toBeNull();
+    expect(result?.invoiceNo).toBe("INV-ACCT-0002");
+    expect(result?.paidAt.toISOString()).toBe(paidAt.toISOString());
+  });
+
+  it("returns null when the amount differs from what was previously paid", async () => {
+    const resource = await prisma.resource.create({
+      data: { email: "flag-test@example.com", name: "Flag Test Resource", accountNo: "111222333444" },
+    });
+    const paidRow = await seedSheetRow({ projectName: "Project Beta", computedAmount: 500 });
+    await prisma.invoice.create({
+      data: {
+        invoiceNo: "INV-ACCT-0003",
+        sheetRowId: paidRow.id,
+        resourceId: resource.id,
+        amount: 500,
+        generationStatus: "GENERATED",
+        approvalStatus: "APPROVED",
+        paidAt: new Date(),
+      },
+    });
+
+    const newRow = await seedSheetRow({ projectName: "Project Gamma", computedAmount: 1000 });
+    expect(await checkAccountAmountFlag(newRow.id)).toBeNull();
   });
 });
